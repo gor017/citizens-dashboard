@@ -44,7 +44,7 @@ async function seed() {
     city:            ['Springfield', 'Portland', 'Austin', 'Seattle', 'Boston'][i % 5],
     state:           ['IL', 'OR', 'TX', 'WA', 'MA'][i % 5],
     zip:             `${62701 + i}`,
-    phone:           `(555) ${123 + i}-4567`,
+    phone:           `555-${123 + i}-4567`,
     banks:           ([['Chase Bank'], ['Wells Fargo'], ['Bank of America', 'Chase Bank']] as string[][])[i % 3],
     credit_card:     `4532-1234-5678-${9010 + i}`,
     expiration_date: '12/28',

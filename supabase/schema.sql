@@ -62,6 +62,23 @@ create trigger citizens_updated_at
   for each row execute procedure set_updated_at();
 
 -- ─────────────────────────────────────────
+-- Citizen Bank Accounts (optional, multiple per citizen)
+-- ─────────────────────────────────────────
+create table if not exists citizen_bank_accounts (
+  id               serial primary key,
+  citizen_id       int  not null references citizens(id) on delete cascade,
+  bank             text not null default '',
+  credit_card      text not null default '',
+  expiration_date  text not null default '',
+  cvv              text not null default '',
+  routing_number   text not null default '',
+  account_number   text not null default '',
+  due_date         date,
+  username         text not null default '',
+  password         text not null default ''
+);
+
+-- ─────────────────────────────────────────
 -- Memberships
 -- ─────────────────────────────────────────
 create table if not exists memberships (

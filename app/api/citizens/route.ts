@@ -4,7 +4,47 @@ import { requireAuth, SessionPayload } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
 
 // ── Helper: map DB row → camelCase Citizen ──────────────────────────────────
-function mapCitizen(row: Record<string, unknown>, memberships: unknown[], customFields: unknown[]) {
+function mapBankAccount(ba: Record<string, unknown>) {
+  return {
+    id: ba.id,
+    bank: ba.bank ?? '',
+    creditCard: ba.credit_card ?? '',
+    expirationDate: ba.expiration_date ?? '',
+    cvv: ba.cvv ?? '',
+    routingNumber: ba.routing_number ?? '',
+    accountNumber: ba.account_number ?? '',
+    dueDate: ba.due_date ?? '',
+    username: ba.username ?? '',
+    password: ba.password ?? '',
+  };
+}
+
+function mapCitizen(
+  row: Record<string, unknown>,
+  memberships: unknown[],
+  customFields: unknown[],
+  bankAccounts: Array<Record<string, unknown>> = []
+) {
+  // Backward compat: if no bank accounts but flat fields exist, expose one synthetic entry
+  const accounts =
+    bankAccounts.length > 0
+      ? bankAccounts.map(mapBankAccount)
+      : row.credit_card
+        ? [
+            {
+              id: 0,
+              bank: Array.isArray(row.banks) ? (row.banks as string[])[0] ?? '' : '',
+              creditCard: row.credit_card,
+              expirationDate: row.expiration_date,
+              cvv: row.cvv,
+              routingNumber: row.routing_number,
+              accountNumber: row.account_number,
+              dueDate: row.due_date,
+              username: row.username,
+              password: row.password,
+            },
+          ]
+        : [];
   return {
     id: row.id,
     firstName: row.first_name,
@@ -27,6 +67,7 @@ function mapCitizen(row: Record<string, unknown>, memberships: unknown[], custom
     active: row.active,
     username: row.username,
     password: row.password,
+    bankAccounts: accounts,
     memberships,
     customFields,
   };
@@ -91,19 +132,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Fetch memberships + custom_fields for each citizen
+  // Fetch memberships, custom_fields, and bank accounts for each citizen
   const ids = (rows ?? []).map((r) => r.id as number);
-  const [mbRes, cfRes] = await Promise.all([
+  const [mbRes, cfRes, baRes] = await Promise.all([
     ids.length
       ? supabase.from('memberships').select('*').in('citizen_id', ids)
       : { data: [], error: null },
     ids.length
       ? supabase.from('custom_fields').select('*').in('citizen_id', ids)
       : { data: [], error: null },
+    ids.length
+      ? supabase.from('citizen_bank_accounts').select('*').in('citizen_id', ids)
+      : { data: [], error: null },
   ]);
 
   const membershipsById: Record<number, unknown[]> = {};
   const customFieldsById: Record<number, unknown[]> = {};
+  const bankAccountsById: Record<number, Record<string, unknown>[]> = {};
   for (const m of mbRes.data ?? []) {
     const row = m as Record<string, unknown>;
     const cid = row.citizen_id as number;
@@ -122,13 +167,20 @@ export async function GET(req: NextRequest) {
     if (!customFieldsById[cid]) customFieldsById[cid] = [];
     customFieldsById[cid].push({ id: row.id, name: row.name, value: row.value });
   }
+  for (const ba of baRes.data ?? []) {
+    const row = ba as Record<string, unknown>;
+    const cid = row.citizen_id as number;
+    if (!bankAccountsById[cid]) bankAccountsById[cid] = [];
+    bankAccountsById[cid].push(row);
+  }
 
   const citizens = (rows ?? []).map((r) => {
     const row = r as Record<string, unknown>;
     return mapCitizen(
       row,
       membershipsById[row.id as number] ?? [],
-      customFieldsById[row.id as number] ?? []
+      customFieldsById[row.id as number] ?? [],
+      bankAccountsById[row.id as number] ?? []
     );
   });
 
@@ -143,8 +195,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
     firstName, middleName, lastName, dob, ssn, address, city, state, zip, phone,
-    bank, creditCard, expirationDate, cvv, routingNumber, accountNumber, dueDate,
-    active, username, password, memberships = [], customFields = [],
+    active, username, password, memberships = [], customFields = [], bankAccounts = [],
   } = body;
 
   if (!username || !password) {
@@ -152,6 +203,15 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = await hashPassword(password);
+  const firstAccount = Array.isArray(bankAccounts) && bankAccounts.length > 0 ? bankAccounts[0] : null;
+  const banks = Array.isArray(bankAccounts) ? bankAccounts.map((a: { bank?: string }) => (a.bank ?? '').trim()).filter(Boolean) : [];
+  const defaultDue = new Date().toISOString().split('T')[0];
+  const dueDateValue = (firstAccount?.dueDate && String(firstAccount.dueDate).trim() !== '') ? firstAccount.dueDate : defaultDue;
+  const dobValue = (dob && String(dob).trim() !== '') ? dob : null;
+
+  if (!dobValue) {
+    return NextResponse.json({ error: 'Date of birth is required', field: 'dob' }, { status: 400 });
+  }
 
   const { data: citizen, error } = await supabase
     .from('citizens')
@@ -159,20 +219,20 @@ export async function POST(req: NextRequest) {
       first_name: firstName,
       middle_name: middleName ?? '',
       last_name: lastName,
-      dob,
+      dob: dobValue,
       ssn,
       address,
       city,
       state,
       zip,
       phone,
-      banks: bank ?? [],
-      credit_card: creditCard,
-      expiration_date: expirationDate,
-      cvv,
-      routing_number: routingNumber,
-      account_number: accountNumber,
-      due_date: dueDate,
+      banks,
+      credit_card: firstAccount?.creditCard ?? '',
+      expiration_date: firstAccount?.expirationDate ?? '',
+      cvv: firstAccount?.cvv ?? '',
+      routing_number: firstAccount?.routingNumber ?? '',
+      account_number: firstAccount?.accountNumber ?? '',
+      due_date: dueDateValue,
       active: active ?? true,
       username,
       password,
@@ -189,6 +249,36 @@ export async function POST(req: NextRequest) {
   }
 
   const citizenId = citizen.id as number;
+
+  // Insert bank accounts (optional)
+  if (Array.isArray(bankAccounts) && bankAccounts.length > 0) {
+    await supabase.from('citizen_bank_accounts').insert(
+      bankAccounts.map(
+        (a: {
+          bank?: string;
+          creditCard?: string;
+          expirationDate?: string;
+          cvv?: string;
+          routingNumber?: string;
+          accountNumber?: string;
+          dueDate?: string;
+          username?: string;
+          password?: string;
+        }) => ({
+          citizen_id: citizenId,
+          bank: (a.bank ?? '').trim(),
+          credit_card: a.creditCard ?? '',
+          expiration_date: a.expirationDate ?? '',
+          cvv: a.cvv ?? '',
+          routing_number: a.routingNumber ?? '',
+          account_number: a.accountNumber ?? '',
+          due_date: (a.dueDate && String(a.dueDate).trim() !== '') ? a.dueDate : null,
+          username: a.username ?? '',
+          password: a.password ?? '',
+        })
+      )
+    );
+  }
 
   // Insert memberships
   if (memberships.length > 0) {

@@ -17,6 +17,19 @@ interface CustomField {
   value: string;
 }
 
+export interface BankAccount {
+  id?: number;
+  bank: string;
+  creditCard: string;
+  expirationDate: string;
+  cvv: string;
+  routingNumber: string;
+  accountNumber: string;
+  dueDate: string;
+  username: string;
+  password: string;
+}
+
 interface Citizen {
   id: number;
   firstName: string;
@@ -39,6 +52,7 @@ interface Citizen {
   active: boolean;
   username: string;
   password: string;
+  bankAccounts?: BankAccount[];
   memberships: Membership[];
   customFields: CustomField[];
   _showBankDropdown?: boolean;
@@ -53,7 +67,21 @@ type DeleteTarget =
   | { type: 'membership'; citizenId: number; index: number }
   | { type: 'customField'; citizenId: number; index: number }
   | { type: 'membershipNew'; index: number }
-  | { type: 'customFieldNew'; index: number };
+  | { type: 'customFieldNew'; index: number }
+  | { type: 'bankAccount'; citizenId: number; index: number }
+  | { type: 'bankAccountNew'; index: number };
+
+const emptyBankAccount = (): BankAccount => ({
+  bank: '',
+  creditCard: '',
+  expirationDate: '',
+  cvv: '',
+  routingNumber: '',
+  accountNumber: '',
+  dueDate: '',
+  username: '',
+  password: '',
+});
 
 const initialNewCitizen: NewCitizenForm = {
   firstName: '',
@@ -76,6 +104,7 @@ const initialNewCitizen: NewCitizenForm = {
   active: true,
   username: '',
   password: '',
+  bankAccounts: [],
   memberships: [],
   customFields: []
 };
@@ -97,6 +126,7 @@ const CitizenDashboard = () => {
   const [showBankDropdown, setShowBankDropdown] = useState(false);
   const [showBankExcludeDropdown, setShowBankExcludeDropdown] = useState(false);
   const [bankInput, setBankInput] = useState('');
+  const [bankAccountDropdownIndex, setBankAccountDropdownIndex] = useState<number | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAddBankModal, setShowAddBankModal] = useState(false);
@@ -216,6 +246,7 @@ const CitizenDashboard = () => {
     setEditingId(citizen.id);
     setEditData({
       ...citizen,
+      bankAccounts: citizen.bankAccounts ?? [],
       _showBankDropdown: false,
       memberships: citizen.memberships ?? [],
       customFields: citizen.customFields ?? []
@@ -228,6 +259,7 @@ const CitizenDashboard = () => {
     setEditingId(null);
     setEditData({});
     setBankInput('');
+    setBankAccountDropdownIndex(null);
     setValidationErrors({});
   };
 
@@ -250,15 +282,23 @@ const CitizenDashboard = () => {
         if (!value) {
           errors[field] = 'Date of birth is required';
         } else {
-          const dob = new Date(typeof value === 'string' || typeof value === 'number' ? value : '');
-          const today = new Date();
-          const age = today.getFullYear() - dob.getFullYear();
-          if (dob > today) {
-            errors[field] = 'Date cannot be in the future';
-          } else if (age < 18) {
-            errors[field] = 'Must be at least 18 years old';
-          } else if (age > 120) {
-            errors[field] = 'Invalid date of birth';
+          const dateStr = typeof value === 'string' ? value : String(value);
+          const yearPart = dateStr.split('-')[0];
+          if (yearPart && yearPart.length !== 4) {
+            errors[field] = 'Year must be 4 digits';
+          } else {
+            const dob = new Date(dateStr);
+            const today = new Date();
+            const age = today.getFullYear() - dob.getFullYear();
+            if (dob > today) {
+              errors[field] = 'Date cannot be in the future';
+            } else if (age < 18) {
+              errors[field] = 'Must be at least 18 years old';
+            } else if (age > 120) {
+              errors[field] = 'Invalid date of birth';
+            } else if (Number.isNaN(dob.getTime())) {
+              errors[field] = 'Invalid date of birth';
+            }
           }
         }
         break;
@@ -300,8 +340,8 @@ const CitizenDashboard = () => {
       case 'phone':
         if (!value) {
           errors[field] = 'Phone is required';
-        } else if (!/^\(\d{3}\)\s\d{3}-\d{4}$/.test(s)) {
-          errors[field] = 'Format must be (XXX) XXX-XXXX';
+        } else if (!/^\d{3}-\d{3}-\d{4}$/.test(s)) {
+          errors[field] = 'Format must be xxx-xxx-xxxx';
         }
         break;
       case 'creditCard':
@@ -350,11 +390,19 @@ const CitizenDashboard = () => {
         if (!value) {
           errors[field] = 'Due date is required';
         } else {
-          const dueDate = new Date(typeof value === 'string' || typeof value === 'number' ? value : '');
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          if (dueDate < today) {
-            errors[field] = 'Due date cannot be in the past';
+          const dateStr = typeof value === 'string' ? value : String(value);
+          const yearPart = dateStr.split('-')[0];
+          if (yearPart && yearPart.length !== 4) {
+            errors[field] = 'Year must be 4 digits';
+          } else {
+            const dueDate = new Date(dateStr);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (Number.isNaN(dueDate.getTime())) {
+              errors[field] = 'Invalid due date';
+            } else if (dueDate < today) {
+              errors[field] = 'Due date cannot be in the past';
+            }
           }
         }
         break;
@@ -385,7 +433,7 @@ const CitizenDashboard = () => {
 
   const validateAllFields = (data: Record<string, unknown>): Record<string, string> => {
     const allErrors: Record<string, string> = {};
-    const fields = ['firstName', 'middleName', 'lastName', 'dob', 'ssn', 'address', 'city', 'state', 'zip', 'phone', 'bank', 'creditCard', 'expirationDate', 'cvv', 'routingNumber', 'accountNumber', 'dueDate', 'username', 'password'];
+    const fields = ['firstName', 'middleName', 'lastName', 'dob', 'ssn', 'address', 'city', 'state', 'zip', 'phone', 'username', 'password'];
     fields.forEach(field => {
       const fieldErrors = validateField(field, data[field]);
       if (Object.keys(fieldErrors).length > 0) {
@@ -424,16 +472,26 @@ const CitizenDashboard = () => {
       });
       if (!res.ok) {
         const body = await res.json();
-        throw new Error(body.error ?? 'Failed to save');
+        const message = body.error ?? 'Failed to save';
+        if (body.field) {
+          setValidationErrors(prev => ({ ...prev, [body.field]: message }));
+        }
+        setError(message);
+        return;
       }
       setEditingId(null);
       setEditData({});
       setBankInput('');
+      setBankAccountDropdownIndex(null);
       setValidationErrors({});
       setError(null);
       await fetchCitizens();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      if (/date|invalid input syntax/i.test(message)) {
+        setValidationErrors(prev => ({ ...prev, dob: message }));
+      }
+      setError(message);
     }
   };
 
@@ -466,20 +524,31 @@ const CitizenDashboard = () => {
       });
       if (!res.ok) {
         const body = await res.json();
+        const message = body.error ?? 'Failed to create citizen';
         if (res.status === 409) {
-          setValidationErrors({ username: body.error ?? 'Username already exists' });
+          setValidationErrors(prev => ({ ...prev, username: message }));
+          setError(message);
           return;
         }
-        throw new Error(body.error ?? 'Failed to create citizen');
+        if (body.field) {
+          setValidationErrors(prev => ({ ...prev, [body.field]: message }));
+        }
+        setError(message);
+        return;
       }
       setShowAddModal(false);
       setNewCitizen({ ...initialNewCitizen });
       setBankInput('');
+      setBankAccountDropdownIndex(null);
       setValidationErrors({});
       setError(null);
       await fetchCitizens();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      if (/date|invalid input syntax/i.test(message)) {
+        setValidationErrors(prev => ({ ...prev, dob: message }));
+      }
+      setError(message);
     }
   };
 
@@ -598,6 +667,122 @@ const CitizenDashboard = () => {
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
+  const updateBankAccount = (index: number, updates: Partial<BankAccount>) => {
+    const list = [...(editData.bankAccounts ?? [])];
+    list[index] = { ...list[index], ...updates };
+    setEditData({ ...editData, bankAccounts: list });
+  };
+
+  const renderBankAccountFields = (
+    account: BankAccount,
+    index: number,
+    isNewCitizen: boolean,
+    onUpdate: (index: number, updates: Partial<BankAccount>) => void
+  ) => {
+    const formatCreditCard = (raw: string) => {
+      const d = raw.replace(/\D/g, '').slice(0, 16);
+      const parts = [d.slice(0, 4), d.slice(4, 8), d.slice(8, 12), d.slice(12)];
+      return parts.filter(Boolean).join('-');
+    };
+    const formatExpiration = (raw: string) => {
+      const v = raw.replace(/\D/g, '').slice(0, 4);
+      if (v.length <= 2) return v;
+      return `${v.slice(0, 2)}/${v.slice(2)}`;
+    };
+    const today = new Date();
+    const dueDateMin = today.toISOString().split('T')[0];
+    const dueDateMax = '2099-12-31';
+    const isBankDropdownOpen = bankAccountDropdownIndex === index;
+    const availableBanksForAccount = uniqueBanks.filter(
+      (b) => bankInput.length === 0 || b.toLowerCase().includes(bankInput.toLowerCase())
+    );
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="relative">
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Bank</label>
+          <input
+            type="text"
+            value={isBankDropdownOpen ? bankInput : account.bank}
+            onChange={(e) => {
+              setBankInput(e.target.value);
+              setBankAccountDropdownIndex(index);
+            }}
+            onFocus={() => {
+              setBankAccountDropdownIndex(index);
+              setBankInput(account.bank);
+            }}
+            onBlur={() => {
+              setTimeout(() => {
+                setBankAccountDropdownIndex(null);
+                setBankInput('');
+              }, 200);
+            }}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+            placeholder="Type to add bank..."
+          />
+          {isBankDropdownOpen && availableBanksForAccount.length > 0 && (
+            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+              {availableBanksForAccount.map((bank: string) => (
+                <button
+                  key={bank}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onUpdate(index, { bank });
+                    setBankAccountDropdownIndex(null);
+                    setBankInput('');
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition text-sm text-gray-900"
+                >
+                  {bank}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAddBankModal(true)}
+            className="mt-1 text-xs text-blue-600 hover:text-blue-700"
+          >
+            + Add New Bank to Options
+          </button>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Credit Card</label>
+          <input type="text" value={account.creditCard} onChange={(e) => onUpdate(index, { creditCard: formatCreditCard(e.target.value) })} placeholder="XXXX-XXXX-XXXX-XXXX" maxLength={19} className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Expiration (MM/YY)</label>
+          <input type="text" value={account.expirationDate} onChange={(e) => onUpdate(index, { expirationDate: formatExpiration(e.target.value) })} placeholder="MM/YY" maxLength={5} className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">CVV</label>
+          <input type="text" value={account.cvv} onChange={(e) => onUpdate(index, { cvv: e.target.value })} placeholder="CVV" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Routing Number</label>
+          <input type="text" value={account.routingNumber} onChange={(e) => onUpdate(index, { routingNumber: e.target.value })} placeholder="Routing" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Account Number</label>
+          <input type="text" value={account.accountNumber} onChange={(e) => onUpdate(index, { accountNumber: e.target.value })} placeholder="Account" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Due Date</label>
+          <input type="date" value={account.dueDate || ''} min={dueDateMin} max={dueDateMax} onChange={(e) => onUpdate(index, { dueDate: e.target.value })} className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Username</label>
+          <input type="text" value={account.username} onChange={(e) => onUpdate(index, { username: e.target.value })} placeholder="Bank username" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-0.5">Password</label>
+          <input type="text" value={account.password} onChange={(e) => onUpdate(index, { password: e.target.value })} placeholder="Bank password" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+        </div>
+      </div>
+    );
+  };
+
   const renderField = (citizen: Citizen | Partial<Citizen> | Record<string, unknown>, field: string, isNewCitizen = false) => {
     const isEditing = isNewCitizen ? true : editingId === (citizen as Citizen).id;
     const value = isNewCitizen ? (newCitizen as Record<string, unknown>)[field] : (isEditing ? (editData as Record<string, unknown>)[field] : (citizen as Record<string, unknown>)[field]);
@@ -608,7 +793,7 @@ const CitizenDashboard = () => {
         return (
           <div>
             <input
-              type={field === 'password' ? 'password' : 'text'}
+              type="text"
               value={typeof value === 'string' ? value : ''}
               onChange={(e) => handleChange(field, e.target.value)}
               className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
@@ -628,6 +813,50 @@ const CitizenDashboard = () => {
               onChange={(e) => handleChange(field, e.target.value)}
               placeholder="MM/YY"
               maxLength={5}
+              className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
+            />
+            {validationErrors[field] && <p className="text-red-600 text-xs mt-1">{validationErrors[field]}</p>}
+          </div>
+        );
+      }
+
+      if (field === 'ssn') {
+        const formatSsn = (raw: string) => {
+          const d = raw.replace(/\D/g, '').slice(0, 9);
+          if (d.length <= 3) return d;
+          if (d.length <= 5) return `${d.slice(0, 3)}-${d.slice(3)}`;
+          return `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}`;
+        };
+        return (
+          <div>
+            <input
+              type="text"
+              value={typeof value === 'string' ? value : ''}
+              onChange={(e) => handleChange(field, formatSsn(e.target.value))}
+              placeholder="xxx-xx-xxxx"
+              maxLength={11}
+              className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
+            />
+            {validationErrors[field] && <p className="text-red-600 text-xs mt-1">{validationErrors[field]}</p>}
+          </div>
+        );
+      }
+
+      if (field === 'phone') {
+        const formatPhone = (raw: string) => {
+          const d = raw.replace(/\D/g, '').slice(0, 10);
+          if (d.length <= 3) return d;
+          if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+          return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+        };
+        return (
+          <div>
+            <input
+              type="text"
+              value={typeof value === 'string' ? value : ''}
+              onChange={(e) => handleChange(field, formatPhone(e.target.value))}
+              placeholder="xxx-xxx-xxxx"
+              maxLength={12}
               className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
             />
             {validationErrors[field] && <p className="text-red-600 text-xs mt-1">{validationErrors[field]}</p>}
@@ -760,12 +989,23 @@ const CitizenDashboard = () => {
         );
       }
       
+      const today = new Date();
+      const dobMaxDate = new Date(today);
+      dobMaxDate.setFullYear(today.getFullYear() - 18);
+      const dobMinDate = new Date(today);
+      dobMinDate.setFullYear(today.getFullYear() - 120);
+      const dobMin = dobMinDate.toISOString().split('T')[0];
+      const dobMax = dobMaxDate.toISOString().split('T')[0];
+      const dueDateMin = today.toISOString().split('T')[0];
+      const dueDateMax = '2099-12-31';
+      const dateMinMax = field === 'dob' ? { min: dobMin, max: dobMax } : field === 'dueDate' ? { min: dueDateMin, max: dueDateMax } : {};
       return (
         <div>
           <input
             type={field === 'dob' || field === 'dueDate' ? 'date' : 'text'}
             value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
             onChange={(e) => handleChange(field, e.target.value)}
+            {...dateMinMax}
             className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
           />
           {validationErrors[field] && <p className="text-red-600 text-xs mt-1">{validationErrors[field]}</p>}
@@ -785,7 +1025,7 @@ const CitizenDashboard = () => {
     }
 
     if ((field === 'username' || field === 'password') && !isNewCitizen) {
-      return <span className="text-gray-700">{field === 'password' && userRole !== 'admin' ? '••••••••' : String(value ?? '')}</span>;
+      return <span className="text-gray-700">{String(value ?? '')}</span>;
     }
 
     return <span className="text-gray-700">{value != null ? String(value) : ''}</span>;
@@ -817,7 +1057,7 @@ const CitizenDashboard = () => {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
               <input
-                type="password"
+                type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
@@ -1056,6 +1296,19 @@ const CitizenDashboard = () => {
                     </div>
                   )}
                 </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Status</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleActive(citizen.id)}
+                      disabled={userRole !== 'admin'}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${citizen.active ? 'bg-green-600' : 'bg-gray-300'} ${userRole === 'admin' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${citizen.active ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                    <span className="text-sm text-gray-600">{citizen.active ? 'Active' : 'Inactive'}</span>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">First Name</label>{renderField(citizen, 'firstName')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Middle Name</label>{renderField(citizen, 'middleName')}</div>
@@ -1067,27 +1320,64 @@ const CitizenDashboard = () => {
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">State</label>{renderField(citizen, 'state')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">ZIP Code</label>{renderField(citizen, 'zip')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Phone</label>{renderField(citizen, 'phone')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Bank</label>{renderField(citizen, 'bank')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Credit Card Number</label>{renderField(citizen, 'creditCard')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Expiration Date</label>{renderField(citizen, 'expirationDate')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">CVV</label>{renderField(citizen, 'cvv')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Routing Number</label>{renderField(citizen, 'routingNumber')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Account Number</label>{renderField(citizen, 'accountNumber')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Due Date</label>{renderField(citizen, 'dueDate')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Username</label>{renderField(citizen, 'username')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Password</label>{renderField(citizen, 'password')}</div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-600 mb-1">Status</label>
+                </div>
+
+                {/* Bank Accounts Section (optional) */}
+                <div className="mt-6 border-t border-gray-200 pt-6">
+                  <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => toggleActive(citizen.id)}
-                        disabled={userRole !== 'admin'}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${citizen.active ? 'bg-green-600' : 'bg-gray-300'} ${userRole === 'admin' ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
-                      >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${citizen.active ? 'translate-x-6' : 'translate-x-1'}`} />
-                      </button>
-                      <span className="text-sm text-gray-600">{citizen.active ? 'Active' : 'Inactive'}</span>
+                      <h3 className="text-lg font-semibold text-gray-800">Bank Accounts</h3>
+                      <span className="text-sm text-gray-500">(Optional)</span>
                     </div>
+                    {userRole === 'admin' && editingId === citizen.id && (
+                      <button
+                        onClick={() => {
+                          const list = editData.bankAccounts ?? [];
+                          setEditData({ ...editData, bankAccounts: [...list, emptyBankAccount()] });
+                        }}
+                        className="flex items-center gap-1 px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700"
+                      >
+                        <Plus size={16} />
+                        Add Bank Account
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-4">
+                    {(editingId === citizen.id ? (editData.bankAccounts ?? []) : (citizen.bankAccounts ?? [])).map((account: BankAccount, idx: number) => (
+                      <div key={account.id ?? `new-${idx}`} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-semibold text-gray-700">Account {idx + 1}</span>
+                          {userRole === 'admin' && editingId === citizen.id && (
+                            <button
+                              onClick={() => { setDeleteTarget({ type: 'bankAccount', citizenId: citizen.id, index: idx }); setShowDeleteModal(true); }}
+                              className="px-2 py-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                        {editingId === citizen.id && userRole === 'admin' ? (
+                          renderBankAccountFields(account, idx, false, updateBankAccount)
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+                            {account.bank && <div><span className="text-gray-500">Bank:</span> <span className="text-gray-900">{account.bank}</span></div>}
+                            {account.creditCard && <div><span className="text-gray-500">Credit Card:</span> <span className="text-gray-900">{account.creditCard}</span></div>}
+                            {account.expirationDate && <div><span className="text-gray-500">Expiration:</span> <span className="text-gray-900">{account.expirationDate}</span></div>}
+                            {account.cvv && <div><span className="text-gray-500">CVV:</span> <span className="text-gray-900">{account.cvv}</span></div>}
+                            {account.routingNumber && <div><span className="text-gray-500">Routing:</span> <span className="text-gray-900">{account.routingNumber}</span></div>}
+                            {account.accountNumber && <div><span className="text-gray-500">Account:</span> <span className="text-gray-900">{account.accountNumber}</span></div>}
+                            {account.dueDate && <div><span className="text-gray-500">Due Date:</span> <span className="text-gray-900">{account.dueDate}</span></div>}
+                            {account.username && <div><span className="text-gray-500">Username:</span> <span className="text-gray-900">{account.username}</span></div>}
+                            {account.password && <div><span className="text-gray-500">Password:</span> <span className="text-gray-900">{account.password}</span></div>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {(editingId !== citizen.id || (editData.bankAccounts ?? []).length === 0) && (citizen.bankAccounts ?? []).length === 0 && (
+                      <p className="text-sm text-gray-500">No bank accounts added.</p>
+                    )}
                   </div>
                 </div>
 
@@ -1317,11 +1607,11 @@ const CitizenDashboard = () => {
       )}
 
       {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50 overflow-y-auto">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl my-8">
             <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between rounded-t-lg z-10">
               <h2 className="text-2xl font-bold text-gray-800">Add New Citizen</h2>
-              <button onClick={() => { setShowAddModal(false); setNewCitizen({ firstName: '', middleName: '', lastName: '', dob: '', ssn: '', address: '', city: '', state: '', zip: '', phone: '', bank: [], creditCard: '', expirationDate: '', cvv: '', routingNumber: '', accountNumber: '', dueDate: '', active: true, username: '', password: '', memberships: [], customFields: [] }); setBankInput(''); setValidationErrors({}); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setShowAddModal(false); setNewCitizen({ ...initialNewCitizen }); setBankInput(''); setBankAccountDropdownIndex(null); setValidationErrors({}); }} className="text-gray-400 hover:text-gray-600">
                 <X size={24} />
               </button>
             </div>
@@ -1340,15 +1630,30 @@ const CitizenDashboard = () => {
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">State</label>{renderField({ state: newCitizen.state }, 'state', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">ZIP Code</label>{renderField({ zip: newCitizen.zip }, 'zip', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Phone</label>{renderField({ phone: newCitizen.phone }, 'phone', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Bank</label>{renderField({ bank: newCitizen.bank }, 'bank', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Credit Card</label>{renderField({ creditCard: newCitizen.creditCard }, 'creditCard', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Expiration (MM/YY)</label>{renderField({ expirationDate: newCitizen.expirationDate }, 'expirationDate', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">CVV</label>{renderField({ cvv: newCitizen.cvv }, 'cvv', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Routing Number</label>{renderField({ routingNumber: newCitizen.routingNumber }, 'routingNumber', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Account Number</label>{renderField({ accountNumber: newCitizen.accountNumber }, 'accountNumber', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Due Date</label>{renderField({ dueDate: newCitizen.dueDate }, 'dueDate', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>{renderField({ username: newCitizen.username }, 'username', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>{renderField({ password: newCitizen.password }, 'password', true)}</div>
+              </div>
+              <div className="mt-6 border-t border-gray-200 pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Bank Accounts</h3>
+                  <span className="text-sm text-gray-500">(Optional)</span>
+                  <button onClick={() => setNewCitizen({ ...newCitizen, bankAccounts: [...(newCitizen.bankAccounts || []), emptyBankAccount()] })} className="flex items-center gap-1 px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700"><Plus size={16} />Add Bank Account</button>
+                </div>
+                <div className="space-y-4">
+                  {(newCitizen.bankAccounts || []).map((account: BankAccount, idx: number) => (
+                    <div key={`new-ba-${idx}`} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-gray-700">Account {idx + 1}</span>
+                        <button onClick={() => { setDeleteTarget({ type: 'bankAccountNew', index: idx }); setShowDeleteModal(true); }} className="px-2 py-1 text-red-600 hover:bg-red-50 rounded text-sm"><Trash2 size={16} /></button>
+                      </div>
+                      {renderBankAccountFields(account, idx, true, (i: number, updates: Partial<BankAccount>) => {
+                        const list = [...(newCitizen.bankAccounts || [])];
+                        list[i] = { ...list[i], ...updates };
+                        setNewCitizen({ ...newCitizen, bankAccounts: list });
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="mt-6 border-t border-gray-200 pt-6">
                 <div className="flex items-center justify-between mb-4">
@@ -1392,7 +1697,7 @@ const CitizenDashboard = () => {
               </div>
             </div>
             <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex items-center justify-end gap-3 rounded-b-lg">
-              <button onClick={() => { setShowAddModal(false); setNewCitizen({ firstName: '', middleName: '', lastName: '', dob: '', ssn: '', address: '', city: '', state: '', zip: '', phone: '', bank: [], creditCard: '', expirationDate: '', cvv: '', routingNumber: '', accountNumber: '', dueDate: '', active: true, username: '', password: '', memberships: [], customFields: [] }); setBankInput(''); setValidationErrors({}); }} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={() => { setShowAddModal(false); setNewCitizen({ ...initialNewCitizen }); setBankInput(''); setBankAccountDropdownIndex(null); setValidationErrors({}); }} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
               <button onClick={addCitizen} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Add Citizen</button>
             </div>
           </div>
@@ -1400,7 +1705,7 @@ const CitizenDashboard = () => {
       )}
 
       {showAddBankModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -1421,7 +1726,7 @@ const CitizenDashboard = () => {
       )}
 
       {showAddFieldModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -1442,7 +1747,7 @@ const CitizenDashboard = () => {
       )}
 
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-6 z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -1460,10 +1765,12 @@ const CitizenDashboard = () => {
                 {deleteTarget?.type === 'customField' && 'Are you sure you want to delete this custom field?'}
                 {deleteTarget?.type === 'membershipNew' && 'Are you sure you want to remove this membership?'}
                 {deleteTarget?.type === 'customFieldNew' && 'Are you sure you want to remove this custom field?'}
+                {deleteTarget?.type === 'bankAccount' && 'Are you sure you want to remove this bank account?'}
+                {deleteTarget?.type === 'bankAccountNew' && 'Are you sure you want to remove this bank account?'}
               </p>
               <div className="flex items-center justify-end gap-3">
                 <button onClick={() => { setShowDeleteModal(false); setDeleteTarget(null); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
-                <button onClick={async () => { try { if (deleteTarget?.type === 'citizen') { const res = await fetch(`/api/citizens/${deleteTarget.id}`, { method: 'DELETE' }); if (!res.ok) { const body = await res.json(); throw new Error(body.error ?? 'Failed to delete'); } setShowDeleteModal(false); setDeleteTarget(null); await fetchCitizens(); } else if (deleteTarget?.type === 'membership') { const updated = (editData.memberships ?? []).filter((_: Membership, i: number) => i !== deleteTarget.index); setEditData({ ...editData, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customField') { const updated = (editData.customFields ?? []).filter((_: CustomField, i: number) => i !== deleteTarget.index); setEditData({ ...editData, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'membershipNew') { const updated = newCitizen.memberships.filter((_: Membership, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customFieldNew') { const updated = newCitizen.customFields.filter((_: CustomField, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } } catch (err) { setError(err instanceof Error ? err.message : 'An error occurred'); setShowDeleteModal(false); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Delete</button>
+                <button onClick={async () => { try { if (deleteTarget?.type === 'citizen') { const res = await fetch(`/api/citizens/${deleteTarget.id}`, { method: 'DELETE' }); if (!res.ok) { const body = await res.json(); throw new Error(body.error ?? 'Failed to delete'); } setShowDeleteModal(false); setDeleteTarget(null); await fetchCitizens(); } else if (deleteTarget?.type === 'membership') { const updated = (editData.memberships ?? []).filter((_: Membership, i: number) => i !== deleteTarget.index); setEditData({ ...editData, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customField') { const updated = (editData.customFields ?? []).filter((_: CustomField, i: number) => i !== deleteTarget.index); setEditData({ ...editData, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'membershipNew') { const updated = newCitizen.memberships.filter((_: Membership, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customFieldNew') { const updated = newCitizen.customFields.filter((_: CustomField, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccount') { const updated = (editData.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setEditData({ ...editData, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccountNew') { const updated = (newCitizen.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } } catch (err) { setError(err instanceof Error ? err.message : 'An error occurred'); setShowDeleteModal(false); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Delete</button>
               </div>
             </div>
           </div>

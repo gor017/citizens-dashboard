@@ -5,7 +5,46 @@ import { hashPassword } from '@/lib/password';
 
 type Params = { params: Promise<{ id: string }> };
 
-function mapCitizen(row: Record<string, unknown>, memberships: unknown[], customFields: unknown[]) {
+function mapBankAccount(ba: Record<string, unknown>) {
+  return {
+    id: ba.id,
+    bank: ba.bank ?? '',
+    creditCard: ba.credit_card ?? '',
+    expirationDate: ba.expiration_date ?? '',
+    cvv: ba.cvv ?? '',
+    routingNumber: ba.routing_number ?? '',
+    accountNumber: ba.account_number ?? '',
+    dueDate: ba.due_date ?? '',
+    username: ba.username ?? '',
+    password: ba.password ?? '',
+  };
+}
+
+function mapCitizen(
+  row: Record<string, unknown>,
+  memberships: unknown[],
+  customFields: unknown[],
+  bankAccounts: Array<Record<string, unknown>> = []
+) {
+  const accounts =
+    bankAccounts.length > 0
+      ? bankAccounts.map(mapBankAccount)
+      : row.credit_card
+        ? [
+            {
+              id: 0,
+              bank: Array.isArray(row.banks) ? (row.banks as string[])[0] ?? '' : '',
+              creditCard: row.credit_card,
+              expirationDate: row.expiration_date,
+              cvv: row.cvv,
+              routingNumber: row.routing_number,
+              accountNumber: row.account_number,
+              dueDate: row.due_date,
+              username: row.username,
+              password: row.password,
+            },
+          ]
+        : [];
   return {
     id: row.id,
     firstName: row.first_name,
@@ -28,6 +67,7 @@ function mapCitizen(row: Record<string, unknown>, memberships: unknown[], custom
     active: row.active,
     username: row.username,
     password: row.password,
+    bankAccounts: accounts,
     memberships,
     customFields,
   };
@@ -54,9 +94,10 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   if (error || !row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const [mbRes, cfRes] = await Promise.all([
+  const [mbRes, cfRes, baRes] = await Promise.all([
     supabase.from('memberships').select('*').eq('citizen_id', id),
     supabase.from('custom_fields').select('*').eq('citizen_id', id),
+    supabase.from('citizen_bank_accounts').select('*').eq('citizen_id', id),
   ]);
 
   const memberships = (mbRes.data ?? []).map((m) => {
@@ -67,8 +108,11 @@ export async function GET(req: NextRequest, { params }: Params) {
     const r = f as Record<string, unknown>;
     return { id: r.id, name: r.name, value: r.value };
   });
+  const bankAccounts = (baRes.data ?? []).map((r) => r as Record<string, unknown>);
 
-  return NextResponse.json(mapCitizen(row as Record<string, unknown>, memberships, customFields));
+  return NextResponse.json(
+    mapCitizen(row as Record<string, unknown>, memberships, customFields, bankAccounts)
+  );
 }
 
 // ── PUT /api/citizens/[id] ───────────────────────────────────────────────────
@@ -82,28 +126,37 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const {
     firstName, middleName, lastName, dob, ssn, address, city, state, zip, phone,
-    bank, creditCard, expirationDate, cvv, routingNumber, accountNumber, dueDate,
-    active, username, password, memberships = [], customFields = [],
+    active, username, password, memberships = [], customFields = [], bankAccounts = [],
   } = body;
+
+  const dobVal = (dob != null && String(dob).trim() !== '') ? dob : null;
+  if (!dobVal) {
+    return NextResponse.json({ error: 'Date of birth is required and must be a valid date', field: 'dob' }, { status: 400 });
+  }
+
+  const firstAccount = Array.isArray(bankAccounts) && bankAccounts.length > 0 ? bankAccounts[0] : null;
+  const banks = Array.isArray(bankAccounts) ? bankAccounts.map((a: { bank?: string }) => (a.bank ?? '').trim()).filter(Boolean) : [];
+  const defaultDue = new Date().toISOString().split('T')[0];
+  const dueDateVal = (firstAccount?.dueDate && String(firstAccount.dueDate).trim() !== '') ? firstAccount.dueDate : defaultDue;
 
   const updatePayload: Record<string, unknown> = {
     first_name: firstName,
     middle_name: middleName ?? '',
     last_name: lastName,
-    dob,
+    dob: dobVal,
     ssn,
     address,
     city,
     state,
     zip,
     phone,
-    banks: bank ?? [],
-    credit_card: creditCard,
-    expiration_date: expirationDate,
-    cvv,
-    routing_number: routingNumber,
-    account_number: accountNumber,
-    due_date: dueDate,
+    banks,
+    credit_card: firstAccount?.creditCard ?? '',
+    expiration_date: firstAccount?.expirationDate ?? '',
+    cvv: firstAccount?.cvv ?? '',
+    routing_number: firstAccount?.routingNumber ?? '',
+    account_number: firstAccount?.accountNumber ?? '',
+    due_date: dueDateVal,
     active,
     username,
   };
@@ -124,6 +177,37 @@ export async function PUT(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Username already exists' }, { status: 409 });
     }
     return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  // Replace bank accounts
+  await supabase.from('citizen_bank_accounts').delete().eq('citizen_id', id);
+  if (Array.isArray(bankAccounts) && bankAccounts.length > 0) {
+    await supabase.from('citizen_bank_accounts').insert(
+      bankAccounts.map(
+        (a: {
+          bank?: string;
+          creditCard?: string;
+          expirationDate?: string;
+          cvv?: string;
+          routingNumber?: string;
+          accountNumber?: string;
+          dueDate?: string;
+          username?: string;
+          password?: string;
+        }) => ({
+          citizen_id: id,
+          bank: (a.bank ?? '').trim(),
+          credit_card: a.creditCard ?? '',
+          expiration_date: a.expirationDate ?? '',
+          cvv: a.cvv ?? '',
+          routing_number: a.routingNumber ?? '',
+          account_number: a.accountNumber ?? '',
+          due_date: (a.dueDate && String(a.dueDate).trim() !== '') ? a.dueDate : null,
+          username: a.username ?? '',
+          password: a.password ?? '',
+        })
+      )
+    );
   }
 
   // Replace memberships: delete existing then re-insert
