@@ -117,8 +117,8 @@ export async function GET(req: NextRequest) {
 
   if (dueSoon) {
     const today = new Date().toISOString().split('T')[0];
-    const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    query = query.gte('due_date', today).lte('due_date', threeDaysLater);
+    const tenDaysLater = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    query = query.gte('due_date', today).lte('due_date', tenDaysLater);
   }
 
   // Pagination

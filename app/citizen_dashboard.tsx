@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Edit2, Save, X, User, Shield, LogOut, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { Edit2, Save, X, User, Shield, LogOut, ChevronLeft, ChevronRight, Plus, Trash2, Copy } from 'lucide-react';
 
 interface Membership {
   id: number;
@@ -109,6 +109,63 @@ const initialNewCitizen: NewCitizenForm = {
   customFields: []
 };
 
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for environments where clipboard API is restricted.
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+};
+
+type CopyableInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  copyValue?: string;
+  wrapperClassName?: string;
+};
+
+const CopyableInput = ({
+  copyValue,
+  wrapperClassName = '',
+  className = '',
+  ...props
+}: CopyableInputProps) => {
+  const effectiveCopy =
+    copyValue ??
+    (typeof props.value === 'string'
+      ? props.value
+      : props.value != null
+        ? String(props.value)
+        : '');
+
+  return (
+    <div className={`relative ${wrapperClassName}`}>
+      <input {...props} className={`${className} pr-10 w-full`} />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void copyText(effectiveCopy);
+        }}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        aria-label="Copy value"
+        title="Copy"
+      >
+        <Copy size={14} />
+      </button>
+    </div>
+  );
+};
+
 const CitizenDashboard = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<'admin' | 'citizen' | null>(null);
@@ -136,6 +193,11 @@ const CitizenDashboard = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [newCitizen, setNewCitizen] = useState<NewCitizenForm & { _showBankDropdown?: boolean }>(initialNewCitizen);
+  const [showBankDeleteModal, setShowBankDeleteModal] = useState(false);
+  const [bankDeleteTarget, setBankDeleteTarget] = useState<string | null>(null);
+  const [bankDeleteError, setBankDeleteError] = useState<string | null>(null);
+  const [bankDeleteIsLinked, setBankDeleteIsLinked] = useState(false);
+  const [bankDeleteChecking, setBankDeleteChecking] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
@@ -618,6 +680,87 @@ const CitizenDashboard = () => {
     }
   };
 
+  const reloadBanks = async () => {
+    try {
+      const res = await fetch('/api/banks');
+      const data = await res.json();
+      setAvailableBanks(data.banks ?? []);
+    } catch {
+      // Silent refresh failure; list will remain as-is.
+    }
+  };
+
+  const deleteBank = async (bankName: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    try {
+      const res = await fetch('/api/banks', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: bankName }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, error: body.error ?? 'Cannot delete bank (it may be linked to users).' };
+      }
+
+      await reloadBanks();
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed to delete bank',
+      };
+    }
+  };
+
+  const openBankDeleteConfirm = (bankName: string) => {
+    setBankDeleteTarget(bankName);
+    setBankDeleteError(null);
+    setBankDeleteIsLinked(false);
+    setBankDeleteChecking(true);
+    setShowBankDeleteModal(true);
+
+    // Pre-check linked status so we can immediately show "cannot delete".
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/banks?checkLinked=true&name=${encodeURIComponent(bankName)}`
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setBankDeleteError(body.error ?? 'Failed to check bank status');
+          setBankDeleteIsLinked(false);
+          return;
+        }
+        const linked = Boolean(body.linked);
+        setBankDeleteIsLinked(linked);
+        if (linked) {
+          setBankDeleteError(body.error ?? 'Cannot delete bank: it is linked to users.');
+        }
+      } finally {
+        setBankDeleteChecking(false);
+      }
+    })();
+  };
+
+  const confirmDeleteBank = async () => {
+    if (!bankDeleteTarget) return;
+    if (bankDeleteIsLinked) return;
+    const res = await deleteBank(bankDeleteTarget);
+    if (!res.ok) {
+      setBankDeleteError(res.error);
+      if (/linked to users/i.test(res.error)) {
+        setBankDeleteIsLinked(true);
+      }
+      return;
+    }
+    setShowBankDeleteModal(false);
+    setBankDeleteTarget(null);
+    setBankDeleteError(null);
+    setBankDeleteIsLinked(false);
+    setBankDeleteChecking(false);
+  };
+
   const addNewField = () => {
     if (newFieldName.trim()) {
       const newField: CustomField = { id: Date.now(), name: newFieldName.trim(), value: '' };
@@ -700,7 +843,7 @@ const CitizenDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="relative">
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Bank</label>
-          <input
+          <CopyableInput
             type="text"
             value={isBankDropdownOpen ? bankInput : account.bank}
             onChange={(e) => {
@@ -719,23 +862,40 @@ const CitizenDashboard = () => {
             }}
             className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
             placeholder="Type to add bank..."
+            copyValue={isBankDropdownOpen ? bankInput : account.bank}
           />
           {isBankDropdownOpen && availableBanksForAccount.length > 0 && (
             <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
               {availableBanksForAccount.map((bank: string) => (
-                <button
+                <div
                   key={bank}
-                  type="button"
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition text-sm text-gray-900"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     onUpdate(index, { bank });
                     setBankAccountDropdownIndex(null);
                     setBankInput('');
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition text-sm text-gray-900"
                 >
-                  {bank}
-                </button>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate">{bank}</span>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setBankAccountDropdownIndex(null);
+                        setBankInput('');
+                        openBankDeleteConfirm(bank);
+                      }}
+                      className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                      aria-label={`Delete ${bank}`}
+                      title="Delete bank"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -749,35 +909,86 @@ const CitizenDashboard = () => {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Credit Card</label>
-          <input type="text" value={account.creditCard} onChange={(e) => onUpdate(index, { creditCard: formatCreditCard(e.target.value) })} placeholder="XXXX-XXXX-XXXX-XXXX" maxLength={19} className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.creditCard}
+            onChange={(e) => onUpdate(index, { creditCard: formatCreditCard(e.target.value) })}
+            placeholder="XXXX-XXXX-XXXX-XXXX"
+            maxLength={19}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Expiration (MM/YY)</label>
-          <input type="text" value={account.expirationDate} onChange={(e) => onUpdate(index, { expirationDate: formatExpiration(e.target.value) })} placeholder="MM/YY" maxLength={5} className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.expirationDate}
+            onChange={(e) => onUpdate(index, { expirationDate: formatExpiration(e.target.value) })}
+            placeholder="MM/YY"
+            maxLength={5}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">CVV</label>
-          <input type="text" value={account.cvv} onChange={(e) => onUpdate(index, { cvv: e.target.value })} placeholder="CVV" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.cvv}
+            onChange={(e) => onUpdate(index, { cvv: e.target.value })}
+            placeholder="CVV"
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Routing Number</label>
-          <input type="text" value={account.routingNumber} onChange={(e) => onUpdate(index, { routingNumber: e.target.value })} placeholder="Routing" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.routingNumber}
+            onChange={(e) => onUpdate(index, { routingNumber: e.target.value })}
+            placeholder="Routing"
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Account Number</label>
-          <input type="text" value={account.accountNumber} onChange={(e) => onUpdate(index, { accountNumber: e.target.value })} placeholder="Account" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.accountNumber}
+            onChange={(e) => onUpdate(index, { accountNumber: e.target.value })}
+            placeholder="Account"
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Due Date</label>
-          <input type="date" value={account.dueDate || ''} min={dueDateMin} max={dueDateMax} onChange={(e) => onUpdate(index, { dueDate: e.target.value })} className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="date"
+            value={account.dueDate || ''}
+            min={dueDateMin}
+            max={dueDateMax}
+            onChange={(e) => onUpdate(index, { dueDate: e.target.value })}
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Username</label>
-          <input type="text" value={account.username} onChange={(e) => onUpdate(index, { username: e.target.value })} placeholder="Bank username" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.username}
+            onChange={(e) => onUpdate(index, { username: e.target.value })}
+            placeholder="Bank username"
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-0.5">Password</label>
-          <input type="text" value={account.password} onChange={(e) => onUpdate(index, { password: e.target.value })} placeholder="Bank password" className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm" />
+          <CopyableInput
+            type="text"
+            value={account.password}
+            onChange={(e) => onUpdate(index, { password: e.target.value })}
+            placeholder="Bank password"
+            className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 text-sm"
+          />
         </div>
       </div>
     );
@@ -792,7 +1003,7 @@ const CitizenDashboard = () => {
       if (field === 'username' || field === 'password') {
         return (
           <div>
-            <input
+            <CopyableInput
               type="text"
               value={typeof value === 'string' ? value : ''}
               onChange={(e) => handleChange(field, e.target.value)}
@@ -807,7 +1018,7 @@ const CitizenDashboard = () => {
       if (field === 'expirationDate') {
         return (
           <div>
-            <input
+            <CopyableInput
               type="text"
               value={typeof value === 'string' ? value : ''}
               onChange={(e) => handleChange(field, e.target.value)}
@@ -829,7 +1040,7 @@ const CitizenDashboard = () => {
         };
         return (
           <div>
-            <input
+            <CopyableInput
               type="text"
               value={typeof value === 'string' ? value : ''}
               onChange={(e) => handleChange(field, formatSsn(e.target.value))}
@@ -851,7 +1062,7 @@ const CitizenDashboard = () => {
         };
         return (
           <div>
-            <input
+            <CopyableInput
               type="text"
               value={typeof value === 'string' ? value : ''}
               onChange={(e) => handleChange(field, formatPhone(e.target.value))}
@@ -936,7 +1147,7 @@ const CitizenDashboard = () => {
               ))}
             </div>
             <div className="relative">
-              <input
+              <CopyableInput
                 type="text"
                 value={bankInput}
                 onChange={(e) => {
@@ -970,9 +1181,37 @@ const CitizenDashboard = () => {
               {((isNewCitizen && newCitizen._showBankDropdown) || (!isNewCitizen && editData._showBankDropdown)) && availableBanksList.length > 0 && (
                 <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
                   {availableBanksList.map((bank: string) => (
-                    <button key={bank} type="button" onMouseDown={(e) => { e.preventDefault(); addBank(bank); }} className="w-full text-left px-3 py-2 hover:bg-blue-50 transition text-sm text-gray-900">
-                      {bank}
-                    </button>
+                    <div
+                      key={bank}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 transition text-sm text-gray-900"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        addBank(bank);
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate">{bank}</span>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setBankInput('');
+                            if (isNewCitizen) {
+                              setNewCitizen(prev => ({ ...prev, _showBankDropdown: false }));
+                            } else {
+                              setEditData(prev => ({ ...prev, _showBankDropdown: false }));
+                            }
+                            openBankDeleteConfirm(bank);
+                          }}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                          aria-label={`Delete ${bank}`}
+                          title="Delete bank"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1001,7 +1240,7 @@ const CitizenDashboard = () => {
       const dateMinMax = field === 'dob' ? { min: dobMin, max: dobMax } : field === 'dueDate' ? { min: dueDateMin, max: dueDateMax } : {};
       return (
         <div>
-          <input
+          <CopyableInput
             type={field === 'dob' || field === 'dueDate' ? 'date' : 'text'}
             value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
             onChange={(e) => handleChange(field, e.target.value)}
@@ -1045,7 +1284,7 @@ const CitizenDashboard = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>
-              <input
+              <CopyableInput
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -1056,7 +1295,7 @@ const CitizenDashboard = () => {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
-              <input
+              <CopyableInput
                 type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -1165,7 +1404,7 @@ const CitizenDashboard = () => {
                     }`}
                   >
                     {showDueSoon && <span>✓</span>}
-                    Due in Next 3 Days
+                    Due in Next 10 Days
                   </button>
                 </div>
               </div>
@@ -1191,7 +1430,29 @@ const CitizenDashboard = () => {
                     {showBankDropdown && filteredBanks.length > 0 && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                         {filteredBanks.map(bank => (
-                          <button key={bank} onMouseDown={() => handleBankSelect(bank)} className="w-full text-left px-4 py-2 hover:bg-blue-50 transition text-gray-900">{bank}</button>
+                          <div
+                            key={bank}
+                            onMouseDown={() => handleBankSelect(bank)}
+                            className="w-full text-left px-4 py-2 hover:bg-blue-50 transition text-gray-900"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="truncate">{bank}</span>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setShowBankDropdown(false);
+                                  openBankDeleteConfirm(bank);
+                                }}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                                aria-label={`Delete ${bank}`}
+                                title="Delete bank"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1218,9 +1479,31 @@ const CitizenDashboard = () => {
                     {showBankExcludeDropdown && filteredExcludeBanks.length > 0 && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                         {filteredExcludeBanks.map(bank => (
-                          <button key={bank} onMouseDown={() => handleBankExcludeSelect(bank)} className="w-full text-left px-4 py-2 hover:bg-red-50 transition text-red-700">
-                            <span className="font-semibold">Exclude:</span> {bank}
-                          </button>
+                          <div
+                            key={bank}
+                            onMouseDown={() => handleBankExcludeSelect(bank)}
+                            className="w-full text-left px-4 py-2 hover:bg-red-50 transition text-red-700"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="truncate">
+                                <span className="font-semibold">Exclude:</span> {bank}
+                              </span>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setShowBankExcludeDropdown(false);
+                                  openBankDeleteConfirm(bank);
+                                }}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                                aria-label={`Delete ${bank}`}
+                                title="Delete bank"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1409,7 +1692,7 @@ const CitizenDashboard = () => {
                       <div key={membership.id} className="p-4 bg-gray-50 rounded-lg">
                         {editingId === citizen.id && userRole === 'admin' ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input
+                            <CopyableInput
                               type="text"
                               value={membership.name}
                               onChange={(e) => {
@@ -1420,7 +1703,7 @@ const CitizenDashboard = () => {
                               placeholder="Membership Name"
                               className="px-3 py-2 border border-gray-300 rounded text-gray-900"
                             />
-                            <input
+                            <CopyableInput
                               type="text"
                               value={membership.login}
                               onChange={(e) => {
@@ -1431,7 +1714,7 @@ const CitizenDashboard = () => {
                               placeholder="Login"
                               className="px-3 py-2 border border-gray-300 rounded text-gray-900"
                             />
-                            <input
+                            <CopyableInput
                               type="text"
                               value={membership.password}
                               onChange={(e) => {
@@ -1443,16 +1726,17 @@ const CitizenDashboard = () => {
                               className="px-3 py-2 border border-gray-300 rounded text-gray-900"
                             />
                             <div className="flex gap-2">
-                              <input
+                              <CopyableInput
                                 type="text"
                                 value={membership.number}
+                                wrapperClassName="flex-1"
                                 onChange={(e) => {
                                   const updated = [...(editData.memberships ?? [])];
                                   updated[idx].number = e.target.value;
                                   setEditData({ ...editData, memberships: updated });
                                 }}
                                 placeholder="Number"
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded text-gray-900"
+                                className="px-3 py-2 border border-gray-300 rounded text-gray-900"
                               />
                               <button
                                 onClick={() => {
@@ -1505,7 +1789,7 @@ const CitizenDashboard = () => {
                           <div className="flex gap-3">
                             <div className="flex-1">
                               <label className="block text-sm font-semibold text-gray-700 mb-1">{field.name}</label>
-                              <input
+                              <CopyableInput
                                 type="text"
                                 value={field.value}
                                 onChange={(e) => {
@@ -1664,11 +1948,36 @@ const CitizenDashboard = () => {
                   {(newCitizen.memberships || []).map((membership, idx) => (
                     <div key={membership.id} className="p-4 bg-gray-50 rounded-lg">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <input type="text" value={membership.name} onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].name = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }} placeholder="Name" className="px-3 py-2 border border-gray-300 rounded text-gray-900" />
-                        <input type="text" value={membership.login} onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].login = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }} placeholder="Login" className="px-3 py-2 border border-gray-300 rounded text-gray-900" />
-                        <input type="text" value={membership.password} onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].password = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }} placeholder="Password" className="px-3 py-2 border border-gray-300 rounded text-gray-900" />
+                          <CopyableInput
+                            type="text"
+                            value={membership.name}
+                            onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].name = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }}
+                            placeholder="Name"
+                            className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                          />
+                          <CopyableInput
+                            type="text"
+                            value={membership.login}
+                            onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].login = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }}
+                            placeholder="Login"
+                            className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                          />
+                          <CopyableInput
+                            type="text"
+                            value={membership.password}
+                            onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].password = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }}
+                            placeholder="Password"
+                            className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                          />
                         <div className="flex gap-2">
-                          <input type="text" value={membership.number} onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].number = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }} placeholder="Number" className="flex-1 px-3 py-2 border border-gray-300 rounded text-gray-900" />
+                            <CopyableInput
+                              type="text"
+                              value={membership.number}
+                              onChange={(e) => { const updated = [...newCitizen.memberships]; updated[idx].number = e.target.value; setNewCitizen({ ...newCitizen, memberships: updated }); }}
+                              placeholder="Number"
+                              wrapperClassName="flex-1"
+                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                            />
                           <button onClick={() => { setDeleteTarget({ type: 'membershipNew', index: idx }); setShowDeleteModal(true); }} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700"><Trash2 size={16} /></button>
                         </div>
                       </div>
@@ -1687,7 +1996,12 @@ const CitizenDashboard = () => {
                       <div className="flex gap-3">
                         <div className="flex-1">
                           <label className="block text-sm font-semibold text-gray-700 mb-1">{field.name}</label>
-                          <input type="text" value={field.value} onChange={(e) => { const updated = [...newCitizen.customFields]; updated[idx].value = e.target.value; setNewCitizen({ ...newCitizen, customFields: updated }); }} className="w-full px-3 py-2 border border-gray-300 rounded text-gray-900" />
+                            <CopyableInput
+                              type="text"
+                              value={field.value}
+                              onChange={(e) => { const updated = [...newCitizen.customFields]; updated[idx].value = e.target.value; setNewCitizen({ ...newCitizen, customFields: updated }); }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded text-gray-900"
+                            />
                         </div>
                         <button onClick={() => { setDeleteTarget({ type: 'customFieldNew', index: idx }); setShowDeleteModal(true); }} className="self-end px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700"><Trash2 size={16} /></button>
                       </div>
@@ -1714,7 +2028,35 @@ const CitizenDashboard = () => {
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Bank Name</label>
-                <input type="text" value={newBankName} onChange={(e) => setNewBankName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addNewBank()} placeholder="Enter bank name" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" />
+                <CopyableInput
+                  type="text"
+                  value={newBankName}
+                  onChange={(e) => setNewBankName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addNewBank()}
+                  placeholder="Enter bank name"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Existing Banks</label>
+                <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+                  {availableBanks.map((bank) => (
+                    <div key={bank} className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg">
+                      <span className="text-sm text-gray-800 truncate">{bank}</span>
+                      <button
+                        type="button"
+                        onClick={() => openBankDeleteConfirm(bank)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        aria-label={`Delete ${bank}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  {availableBanks.length === 0 && (
+                    <p className="text-sm text-gray-500">No banks added yet.</p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center justify-end gap-3">
                 <button onClick={() => { setShowAddBankModal(false); setNewBankName(''); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
@@ -1735,7 +2077,15 @@ const CitizenDashboard = () => {
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Field Name</label>
-                <input type="text" value={newFieldName} onChange={(e) => setNewFieldName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addNewField()} placeholder="e.g., Emergency Contact" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900" autoFocus />
+                <CopyableInput
+                  type="text"
+                  value={newFieldName}
+                  onChange={(e) => setNewFieldName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addNewField()}
+                  placeholder="e.g., Emergency Contact"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  autoFocus
+                />
               </div>
               <div className="flex items-center justify-end gap-3">
                 <button onClick={() => { setShowAddFieldModal(false); setNewFieldName(''); setAddFieldForNewCitizen(false); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
@@ -1771,6 +2121,61 @@ const CitizenDashboard = () => {
               <div className="flex items-center justify-end gap-3">
                 <button onClick={() => { setShowDeleteModal(false); setDeleteTarget(null); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
                 <button onClick={async () => { try { if (deleteTarget?.type === 'citizen') { const res = await fetch(`/api/citizens/${deleteTarget.id}`, { method: 'DELETE' }); if (!res.ok) { const body = await res.json(); throw new Error(body.error ?? 'Failed to delete'); } setShowDeleteModal(false); setDeleteTarget(null); await fetchCitizens(); } else if (deleteTarget?.type === 'membership') { const updated = (editData.memberships ?? []).filter((_: Membership, i: number) => i !== deleteTarget.index); setEditData({ ...editData, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customField') { const updated = (editData.customFields ?? []).filter((_: CustomField, i: number) => i !== deleteTarget.index); setEditData({ ...editData, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'membershipNew') { const updated = newCitizen.memberships.filter((_: Membership, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customFieldNew') { const updated = newCitizen.customFields.filter((_: CustomField, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccount') { const updated = (editData.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setEditData({ ...editData, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccountNew') { const updated = (newCitizen.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } } catch (err) { setError(err instanceof Error ? err.message : 'An error occurred'); setShowDeleteModal(false); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBankDeleteModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="text-red-600" size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">Delete Bank</h2>
+                  <p className="text-sm text-gray-600">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <p className="text-gray-700 mb-4">
+                Are you sure you want to delete bank <span className="font-semibold">{bankDeleteTarget ?? ''}</span>?
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                If any users are linked to this bank, deletion will be blocked.
+              </p>
+
+              {bankDeleteError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+                  {bankDeleteError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowBankDeleteModal(false);
+                    setBankDeleteTarget(null);
+                    setBankDeleteError(null);
+                    setBankDeleteIsLinked(false);
+                    setBankDeleteChecking(false);
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    void confirmDeleteBank();
+                  }}
+                  disabled={bankDeleteChecking || bankDeleteIsLinked}
+                  className={`px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
