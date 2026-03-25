@@ -42,6 +42,7 @@ interface Citizen {
   state: string;
   zip: string;
   phone: string;
+  notes: string;
   bank: string[];
   creditCard: string;
   expirationDate: string;
@@ -94,6 +95,7 @@ const initialNewCitizen: NewCitizenForm = {
   state: '',
   zip: '',
   phone: '',
+  notes: '',
   bank: [],
   creditCard: '',
   expirationDate: '',
@@ -109,9 +111,27 @@ const initialNewCitizen: NewCitizenForm = {
   customFields: []
 };
 
+const showToast = (message: string) => {
+  // Lightweight DOM-based toast (no dependency on a toast library).
+  const existing = document.getElementById('copy-toast');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.id = 'copy-toast';
+  el.textContent = message;
+  el.className =
+    'fixed bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg text-sm';
+  document.body.appendChild(el);
+
+  window.setTimeout(() => {
+    el.remove();
+  }, 1500);
+};
+
 const copyText = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);
+    showToast('Copied');
   } catch {
     // Fallback for environments where clipboard API is restricted.
     const ta = document.createElement('textarea');
@@ -124,10 +144,16 @@ const copyText = async (text: string) => {
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
+    showToast('Copied');
   }
 };
 
 type CopyableInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  copyValue?: string;
+  wrapperClassName?: string;
+};
+
+type CopyableTextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   copyValue?: string;
   wrapperClassName?: string;
 };
@@ -162,6 +188,71 @@ const CopyableInput = ({
       >
         <Copy size={14} />
       </button>
+    </div>
+  );
+};
+
+const CopyableText = ({ value, className = '' }: { value: string; className?: string }) => {
+  const safeValue = value ?? '';
+  const shouldShowCopy = safeValue.trim().length > 0;
+  return (
+    <div className={`flex items-center gap-2 ${className}`}>
+      <span className="flex-1 text-gray-700 break-words whitespace-pre-wrap">{safeValue}</span>
+      {shouldShowCopy && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void copyText(safeValue);
+          }}
+          className="text-gray-400 hover:text-gray-600"
+          aria-label="Copy value"
+          title="Copy"
+        >
+          <Copy size={14} />
+        </button>
+      )}
+    </div>
+  );
+};
+
+const CopyableTextarea = ({
+  copyValue,
+  wrapperClassName = '',
+  className = '',
+  ...props
+}: CopyableTextareaProps) => {
+  const effectiveCopy =
+    copyValue ??
+    (typeof props.value === 'string'
+      ? props.value
+      : props.value != null
+        ? String(props.value)
+        : '');
+  const shouldShowCopy = effectiveCopy.trim().length > 0;
+
+  return (
+    <div className={`relative ${wrapperClassName}`}>
+      <textarea
+        {...props}
+        className={`${className} pr-10 w-full resize-y`}
+      />
+      {shouldShowCopy && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void copyText(effectiveCopy);
+          }}
+          className="absolute right-2 top-3 text-gray-400 hover:text-gray-600"
+          aria-label="Copy value"
+          title="Copy"
+        >
+          <Copy size={14} />
+        </button>
+      )}
     </div>
   );
 };
@@ -1000,6 +1091,20 @@ const CitizenDashboard = () => {
     const handleChange = isNewCitizen ? handleNewCitizenChange : handleInputChange;
 
     if (isEditing && userRole === 'admin') {
+      if (field === 'notes') {
+        return (
+          <div>
+            <CopyableTextarea
+              value={typeof value === 'string' ? value : ''}
+              onChange={(e) => handleChange(field, e.target.value)}
+              placeholder="Notes..."
+              rows={4}
+              className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
+            />
+            {validationErrors[field] && <p className="text-red-600 text-xs mt-1">{validationErrors[field]}</p>}
+          </div>
+        );
+      }
       if (field === 'username' || field === 'password') {
         return (
           <div>
@@ -1255,19 +1360,46 @@ const CitizenDashboard = () => {
     if (field === 'bank' && !isNewCitizen) {
       const banks = Array.isArray(value) ? (value as string[]) : [];
       return (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-2">
           {banks.map((bank: string, index: number) => (
-            <span key={`${bank}-${index}`} className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">{bank}</span>
+            <span
+              key={`${bank}-${index}`}
+              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
+            >
+              <span className="max-w-[160px] truncate">{bank}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void copyText(bank);
+                }}
+                className="text-blue-800/60 hover:text-blue-800"
+                aria-label={`Copy ${bank}`}
+                title="Copy"
+              >
+                <Copy size={12} />
+              </button>
+            </span>
           ))}
         </div>
       );
     }
 
     if ((field === 'username' || field === 'password') && !isNewCitizen) {
-      return <span className="text-gray-700">{String(value ?? '')}</span>;
+      return <CopyableText value={String(value ?? '')} />;
     }
 
-    return <span className="text-gray-700">{value != null ? String(value) : ''}</span>;
+    if (field === 'notes') {
+      return (
+        <CopyableText
+          value={value != null ? String(value) : ''}
+          className="w-full"
+        />
+      );
+    }
+
+    return <CopyableText value={value != null ? String(value) : ''} />;
   };
 
   if (!isLoggedIn) {
@@ -1375,7 +1507,7 @@ const CitizenDashboard = () => {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => handleSearchChange(e.target.value)}
-                    placeholder="Search by name, SSN, credit card, or phone..."
+                    placeholder="Search by name, SSN, credit card, phone, or notes..."
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
@@ -1598,6 +1730,7 @@ const CitizenDashboard = () => {
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Last Name</label>{renderField(citizen, 'lastName')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Date of Birth</label>{renderField(citizen, 'dob')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">SSN</label>{renderField(citizen, 'ssn')}</div>
+                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Due Date</label>{renderField(citizen, 'dueDate')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Address</label>{renderField(citizen, 'address')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">City</label>{renderField(citizen, 'city')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">State</label>{renderField(citizen, 'state')}</div>
@@ -1605,6 +1738,13 @@ const CitizenDashboard = () => {
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Phone</label>{renderField(citizen, 'phone')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Username</label>{renderField(citizen, 'username')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Password</label>{renderField(citizen, 'password')}</div>
+                </div>
+
+                <hr className="my-6 border-gray-200" />
+
+                <div className="mt-4 max-w-[377px]">
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">Notes</label>
+                  {renderField(citizen, 'notes')}
                 </div>
 
                 {/* Bank Accounts Section (optional) */}
@@ -1909,6 +2049,7 @@ const CitizenDashboard = () => {
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Last Name</label>{renderField({ lastName: newCitizen.lastName }, 'lastName', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Date of Birth</label>{renderField({ dob: newCitizen.dob }, 'dob', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">SSN</label>{renderField({ ssn: newCitizen.ssn }, 'ssn', true)}</div>
+                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Due Date</label>{renderField({ dueDate: newCitizen.dueDate }, 'dueDate', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Address</label>{renderField({ address: newCitizen.address }, 'address', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">City</label>{renderField({ city: newCitizen.city }, 'city', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">State</label>{renderField({ state: newCitizen.state }, 'state', true)}</div>
@@ -1917,6 +2058,14 @@ const CitizenDashboard = () => {
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>{renderField({ username: newCitizen.username }, 'username', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>{renderField({ password: newCitizen.password }, 'password', true)}</div>
               </div>
+
+              <hr className="my-6 border-gray-200" />
+
+              <div className="mt-4 max-w-[377px]">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Notes</label>
+                {renderField({ notes: newCitizen.notes }, 'notes', true)}
+              </div>
+
               <div className="mt-6 border-t border-gray-200 pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-800">Bank Accounts</h3>

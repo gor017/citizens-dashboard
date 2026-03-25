@@ -67,6 +67,7 @@ function mapCitizen(
     active: row.active,
     username: row.username,
     password: row.password,
+    notes: row.notes ?? '',
     bankAccounts: accounts,
     memberships,
     customFields,
@@ -126,7 +127,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const {
     firstName, middleName, lastName, dob, ssn, address, city, state, zip, phone,
-    active, username, password, memberships = [], customFields = [], bankAccounts = [],
+    notes, active, username, password, memberships = [], customFields = [], bankAccounts = [],
   } = body;
 
   const dobVal = (dob != null && String(dob).trim() !== '') ? dob : null;
@@ -159,6 +160,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     due_date: dueDateVal,
     active,
     username,
+    notes: notes ?? '',
   };
 
   // Only re-hash if a new password was provided
