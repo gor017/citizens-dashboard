@@ -1730,7 +1730,6 @@ const CitizenDashboard = () => {
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Last Name</label>{renderField(citizen, 'lastName')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Date of Birth</label>{renderField(citizen, 'dob')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">SSN</label>{renderField(citizen, 'ssn')}</div>
-                  <div><label className="block text-sm font-semibold text-gray-600 mb-1">Due Date</label>{renderField(citizen, 'dueDate')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">Address</label>{renderField(citizen, 'address')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">City</label>{renderField(citizen, 'city')}</div>
                   <div><label className="block text-sm font-semibold text-gray-600 mb-1">State</label>{renderField(citizen, 'state')}</div>
@@ -1791,7 +1790,7 @@ const CitizenDashboard = () => {
                             {account.cvv && <div><span className="text-gray-500">CVV:</span> <span className="text-gray-900">{account.cvv}</span></div>}
                             {account.routingNumber && <div><span className="text-gray-500">Routing:</span> <span className="text-gray-900">{account.routingNumber}</span></div>}
                             {account.accountNumber && <div><span className="text-gray-500">Account:</span> <span className="text-gray-900">{account.accountNumber}</span></div>}
-                            {account.dueDate && <div><span className="text-gray-500">Due Date:</span> <span className="text-gray-900">{account.dueDate}</span></div>}
+                            <div><span className="text-gray-500">Due Date:</span> <span className="text-gray-900">{account.dueDate || 'Not set'}</span></div>
                             {account.username && <div><span className="text-gray-500">Username:</span> <span className="text-gray-900">{account.username}</span></div>}
                             {account.password && <div><span className="text-gray-500">Password:</span> <span className="text-gray-900">{account.password}</span></div>}
                           </div>
@@ -2049,7 +2048,6 @@ const CitizenDashboard = () => {
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Last Name</label>{renderField({ lastName: newCitizen.lastName }, 'lastName', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Date of Birth</label>{renderField({ dob: newCitizen.dob }, 'dob', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">SSN</label>{renderField({ ssn: newCitizen.ssn }, 'ssn', true)}</div>
-                <div><label className="block text-sm font-semibold text-gray-700 mb-2">Due Date</label>{renderField({ dueDate: newCitizen.dueDate }, 'dueDate', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Address</label>{renderField({ address: newCitizen.address }, 'address', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">City</label>{renderField({ city: newCitizen.city }, 'city', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">State</label>{renderField({ state: newCitizen.state }, 'state', true)}</div>
