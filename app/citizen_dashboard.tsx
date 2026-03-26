@@ -35,6 +35,7 @@ interface Citizen {
   firstName: string;
   middleName: string;
   lastName: string;
+  flName: string;
   dob: string;
   ssn: string;
   address: string;
@@ -88,6 +89,7 @@ const initialNewCitizen: NewCitizenForm = {
   firstName: '',
   middleName: '',
   lastName: '',
+  flName: '',
   dob: '',
   ssn: '',
   address: '',
@@ -597,6 +599,28 @@ const CitizenDashboard = () => {
   };
 
   const saveEdit = async () => {
+    if (userRole === 'citizen') {
+      try {
+        const res = await fetch(`/api/citizens/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: editData.notes ?? '' }),
+        });
+        if (!res.ok) {
+          const body = await res.json();
+          setError(body.error ?? 'Failed to save notes');
+          return;
+        }
+        setEditingId(null);
+        setEditData({});
+        setError(null);
+        await fetchCitizens();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      }
+      return;
+    }
+
     const errors = validateAllFields(editData);
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
@@ -1090,20 +1114,21 @@ const CitizenDashboard = () => {
     const value = isNewCitizen ? (newCitizen as Record<string, unknown>)[field] : (isEditing ? (editData as Record<string, unknown>)[field] : (citizen as Record<string, unknown>)[field]);
     const handleChange = isNewCitizen ? handleNewCitizenChange : handleInputChange;
 
+    if (field === 'notes' && isEditing && userRole === 'citizen' && !isNewCitizen) {
+      return (
+        <CopyableTextarea
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => handleChange(field, e.target.value)}
+          placeholder="Notes..."
+          rows={4}
+          className="w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 border-blue-300 focus:ring-blue-500"
+        />
+      );
+    }
+
     if (isEditing && userRole === 'admin') {
       if (field === 'notes') {
-        return (
-          <div>
-            <CopyableTextarea
-              value={typeof value === 'string' ? value : ''}
-              onChange={(e) => handleChange(field, e.target.value)}
-              placeholder="Notes..."
-              rows={4}
-              className={`w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 text-gray-900 ${validationErrors[field] ? 'border-red-300 focus:ring-red-500' : 'border-blue-300 focus:ring-blue-500'}`}
-            />
-            {validationErrors[field] && <p className="text-red-600 text-xs mt-1">{validationErrors[field]}</p>}
-          </div>
-        );
+        return <CopyableText value={typeof value === 'string' ? value : ''} className="w-full" />;
       }
       if (field === 'username' || field === 'password') {
         return (
@@ -1507,7 +1532,7 @@ const CitizenDashboard = () => {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => handleSearchChange(e.target.value)}
-                    placeholder="Search by name, SSN, credit card, phone, or notes..."
+                    placeholder="Search by name, FL name, SSN, credit card, or phone..."
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                   />
                 </div>
@@ -1684,7 +1709,7 @@ const CitizenDashboard = () => {
                       </span>
                     </div>
                   </div>
-                  {userRole === 'admin' && (
+                  {(userRole === 'admin' || (userRole === 'citizen' && currentUserId === citizen.id)) && (
                     <div className="flex items-center gap-2">
                       {editingId === citizen.id ? (
                         <>
@@ -1697,15 +1722,23 @@ const CitizenDashboard = () => {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => startEdit(citizen)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                            <Edit2 size={18} />Edit
-                          </button>
-                          <button 
-                            onClick={() => deleteCitizen(citizen.id)} 
-                            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
-                          >
-                            <Trash2 size={18} />Delete
-                          </button>
+                          {userRole === 'admin' ? (
+                            <>
+                              <button onClick={() => startEdit(citizen)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                                <Edit2 size={18} />Edit
+                              </button>
+                              <button
+                                onClick={() => deleteCitizen(citizen.id)}
+                                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                              >
+                                <Trash2 size={18} />Delete
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => startEdit(citizen)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                              <Edit2 size={18} />Edit Notes
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -1744,6 +1777,13 @@ const CitizenDashboard = () => {
                 <div className="mt-4 max-w-[377px]">
                   <label className="block text-sm font-semibold text-gray-600 mb-1">Notes</label>
                   {renderField(citizen, 'notes')}
+                </div>
+
+                <hr className="my-6 border-gray-200" />
+
+                <div className="mt-4 max-w-[377px]">
+                  <label className="block text-sm font-semibold text-gray-600 mb-1">FL Name</label>
+                  {renderField(citizen, 'flName')}
                 </div>
 
                 {/* Bank Accounts Section (optional) */}
@@ -2055,13 +2095,6 @@ const CitizenDashboard = () => {
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Phone</label>{renderField({ phone: newCitizen.phone }, 'phone', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>{renderField({ username: newCitizen.username }, 'username', true)}</div>
                 <div><label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>{renderField({ password: newCitizen.password }, 'password', true)}</div>
-              </div>
-
-              <hr className="my-6 border-gray-200" />
-
-              <div className="mt-4 max-w-[377px]">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Notes</label>
-                {renderField({ notes: newCitizen.notes }, 'notes', true)}
               </div>
 
               <div className="mt-6 border-t border-gray-200 pt-6">

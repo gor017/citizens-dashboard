@@ -42,6 +42,7 @@ create table if not exists citizens (
   active          boolean     not null default true,
   username        text        not null unique,
   notes           text        not null default '',
+  fl_name         text        not null default '',
   password        text        not null default '',
   password_hash   text        not null,
   created_at      timestamptz not null default now(),

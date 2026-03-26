@@ -68,6 +68,7 @@ function mapCitizen(
     username: row.username,
     password: row.password,
     notes: row.notes ?? '',
+    flName: row.fl_name ?? '',
     bankAccounts: accounts,
     memberships,
     customFields,
@@ -98,7 +99,7 @@ export async function GET(req: NextRequest) {
 
   if (search) {
     query = query.or(
-      `first_name.ilike.%${search}%,last_name.ilike.%${search}%,ssn.ilike.%${search}%,credit_card.ilike.%${search}%,phone.ilike.%${search}%,notes.ilike.%${search}%`
+      `first_name.ilike.%${search}%,last_name.ilike.%${search}%,fl_name.ilike.%${search}%,ssn.ilike.%${search}%,credit_card.ilike.%${search}%,phone.ilike.%${search}%`
     );
   }
 
@@ -196,7 +197,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
     firstName, middleName, lastName, dob, ssn, address, city, state, zip, phone,
-    notes, active, username, password, memberships = [], customFields = [], bankAccounts = [],
+    notes, flName, active, username, password, memberships = [], customFields = [], bankAccounts = [],
   } = body;
 
   if (!username || !password) {
@@ -239,6 +240,7 @@ export async function POST(req: NextRequest) {
       password,
       password_hash: passwordHash,
       notes: notes ?? '',
+      fl_name: flName ?? '',
     })
     .select('id')
     .single();

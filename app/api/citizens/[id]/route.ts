@@ -68,6 +68,7 @@ function mapCitizen(
     username: row.username,
     password: row.password,
     notes: row.notes ?? '',
+    flName: row.fl_name ?? '',
     bankAccounts: accounts,
     memberships,
     customFields,
@@ -118,16 +119,36 @@ export async function GET(req: NextRequest, { params }: Params) {
 
 // ── PUT /api/citizens/[id] ───────────────────────────────────────────────────
 export async function PUT(req: NextRequest, { params }: Params) {
-  const authResult = await requireAuth(req, 'admin');
+  const authResult = await requireAuth(req);
   if (authResult instanceof NextResponse) return authResult;
+  const session = authResult as SessionPayload;
 
   const { id: idParam } = await params;
   const id = parseInt(idParam, 10);
   const body = await req.json();
 
+  // Citizens can edit only their own notes.
+  if (session.role === 'citizen') {
+    if (session.userId !== id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { notes } = body as { notes?: string };
+    const { error: notesError } = await supabase
+      .from('citizens')
+      .update({ notes: notes ?? '' })
+      .eq('id', id);
+
+    if (notesError) {
+      return NextResponse.json({ error: notesError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
   const {
     firstName, middleName, lastName, dob, ssn, address, city, state, zip, phone,
-    notes, active, username, password, memberships = [], customFields = [], bankAccounts = [],
+    notes, flName, active, username, password, memberships = [], customFields = [], bankAccounts = [],
   } = body;
 
   const dobVal = (dob != null && String(dob).trim() !== '') ? dob : null;
@@ -161,6 +182,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     active,
     username,
     notes: notes ?? '',
+    fl_name: flName ?? '',
   };
 
   // Only re-hash if a new password was provided
