@@ -1898,36 +1898,49 @@ const CitizenDashboard = () => {
                   </div>
                   <div className="space-y-3">
                     {(editingId === citizen.id ? (editData.bureaus ?? []) : (citizen.bureaus ?? [])).map((bureau: Bureau, idx: number) => (
-                      <div key={bureau.id} className="p-4 bg-gray-50 rounded-lg">
+                      <div key={bureau.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                         {editingId === citizen.id && userRole === 'admin' ? (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <CopyableInput
-                              type="text"
-                              value={bureau.name}
-                              onChange={(e) => {
-                                const updated = [...(editData.bureaus ?? [])];
-                                updated[idx].name = e.target.value;
-                                setEditData({ ...editData, bureaus: updated });
-                              }}
-                              placeholder="Name"
-                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
-                            />
-                            <CopyableInput
-                              type="text"
-                              value={bureau.login}
-                              onChange={(e) => {
-                                const updated = [...(editData.bureaus ?? [])];
-                                updated[idx].login = e.target.value;
-                                setEditData({ ...editData, bureaus: updated });
-                              }}
-                              placeholder="Login"
-                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
-                            />
-                            <div className="flex gap-2 md:col-span-2">
+                          <>
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm font-semibold text-gray-700">Bureau {idx + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteTarget({ type: 'bureau', citizenId: citizen.id, index: idx });
+                                  setShowDeleteModal(true);
+                                }}
+                                className="px-2 py-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <CopyableInput
+                                type="text"
+                                value={bureau.name}
+                                onChange={(e) => {
+                                  const updated = [...(editData.bureaus ?? [])];
+                                  updated[idx].name = e.target.value;
+                                  setEditData({ ...editData, bureaus: updated });
+                                }}
+                                placeholder="Name"
+                                className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                              />
+                              <CopyableInput
+                                type="text"
+                                value={bureau.login}
+                                onChange={(e) => {
+                                  const updated = [...(editData.bureaus ?? [])];
+                                  updated[idx].login = e.target.value;
+                                  setEditData({ ...editData, bureaus: updated });
+                                }}
+                                placeholder="Login"
+                                className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                              />
                               <CopyableInput
                                 type="text"
                                 value={bureau.password}
-                                wrapperClassName="flex-1"
+                                wrapperClassName="md:col-span-2"
                                 onChange={(e) => {
                                   const updated = [...(editData.bureaus ?? [])];
                                   updated[idx].password = e.target.value;
@@ -1936,30 +1949,20 @@ const CitizenDashboard = () => {
                                 placeholder="Password"
                                 className="px-3 py-2 border border-gray-300 rounded text-gray-900"
                               />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDeleteTarget({ type: 'bureau', citizenId: citizen.id, index: idx });
-                                  setShowDeleteModal(true);
+                              <CopyableTextarea
+                                value={bureau.notes}
+                                onChange={(e) => {
+                                  const updated = [...(editData.bureaus ?? [])];
+                                  updated[idx].notes = e.target.value;
+                                  setEditData({ ...editData, bureaus: updated });
                                 }}
-                                className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 shrink-0"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                                placeholder="Notes"
+                                rows={3}
+                                wrapperClassName="md:col-span-2"
+                                className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                              />
                             </div>
-                            <CopyableTextarea
-                              value={bureau.notes}
-                              onChange={(e) => {
-                                const updated = [...(editData.bureaus ?? [])];
-                                updated[idx].notes = e.target.value;
-                                setEditData({ ...editData, bureaus: updated });
-                              }}
-                              placeholder="Notes"
-                              rows={3}
-                              wrapperClassName="md:col-span-2"
-                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
-                            />
-                          </div>
+                          </>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-800">
                             <div><strong>Name:</strong> {bureau.name}</div>
@@ -2272,7 +2275,17 @@ const CitizenDashboard = () => {
                 </div>
                 <div className="space-y-3">
                   {(newCitizen.bureaus || []).map((bureau, idx) => (
-                    <div key={bureau.id} className="p-4 bg-gray-50 rounded-lg">
+                    <div key={bureau.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-gray-700">Bureau {idx + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setDeleteTarget({ type: 'bureauNew', index: idx }); setShowDeleteModal(true); }}
+                          className="px-2 py-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <CopyableInput
                           type="text"
@@ -2296,27 +2309,18 @@ const CitizenDashboard = () => {
                           placeholder="Login"
                           className="px-3 py-2 border border-gray-300 rounded text-gray-900"
                         />
-                        <div className="flex gap-2 md:col-span-2">
-                          <CopyableInput
-                            type="text"
-                            value={bureau.password}
-                            wrapperClassName="flex-1"
-                            onChange={(e) => {
-                              const updated = [...(newCitizen.bureaus || [])];
-                              updated[idx].password = e.target.value;
-                              setNewCitizen({ ...newCitizen, bureaus: updated });
-                            }}
-                            placeholder="Password"
-                            className="px-3 py-2 border border-gray-300 rounded text-gray-900"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => { setDeleteTarget({ type: 'bureauNew', index: idx }); setShowDeleteModal(true); }}
-                            className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 shrink-0"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        <CopyableInput
+                          type="text"
+                          value={bureau.password}
+                          wrapperClassName="md:col-span-2"
+                          onChange={(e) => {
+                            const updated = [...(newCitizen.bureaus || [])];
+                            updated[idx].password = e.target.value;
+                            setNewCitizen({ ...newCitizen, bureaus: updated });
+                          }}
+                          placeholder="Password"
+                          className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                        />
                         <CopyableTextarea
                           value={bureau.notes}
                           onChange={(e) => {
