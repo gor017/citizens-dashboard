@@ -11,6 +11,14 @@ interface Membership {
   number: string;
 }
 
+interface Bureau {
+  id: number;
+  name: string;
+  notes: string;
+  login: string;
+  password: string;
+}
+
 interface CustomField {
   id: number;
   name: string;
@@ -55,6 +63,7 @@ interface Citizen {
   username: string;
   password: string;
   bankAccounts?: BankAccount[];
+  bureaus: Bureau[];
   memberships: Membership[];
   customFields: CustomField[];
   _showBankDropdown?: boolean;
@@ -66,8 +75,10 @@ type EditData = Citizen;
 
 type DeleteTarget =
   | { type: 'citizen'; id: number }
+  | { type: 'bureau'; citizenId: number; index: number }
   | { type: 'membership'; citizenId: number; index: number }
   | { type: 'customField'; citizenId: number; index: number }
+  | { type: 'bureauNew'; index: number }
   | { type: 'membershipNew'; index: number }
   | { type: 'customFieldNew'; index: number }
   | { type: 'bankAccount'; citizenId: number; index: number }
@@ -109,6 +120,7 @@ const initialNewCitizen: NewCitizenForm = {
   username: '',
   password: '',
   bankAccounts: [],
+  bureaus: [],
   memberships: [],
   customFields: []
 };
@@ -403,6 +415,7 @@ const CitizenDashboard = () => {
       ...citizen,
       bankAccounts: citizen.bankAccounts ?? [],
       _showBankDropdown: false,
+      bureaus: citizen.bureaus ?? [],
       memberships: citizen.memberships ?? [],
       customFields: citizen.customFields ?? []
     });
@@ -627,6 +640,14 @@ const CitizenDashboard = () => {
       return;
     }
 
+    const invalidBureaus = (editData.bureaus || []).some(
+      b => !b.name.trim() || !b.login.trim() || !b.password.trim()
+    );
+    if (invalidBureaus) {
+      setError('All bureau fields (Name, Login, Password) must be filled');
+      return;
+    }
+
     const invalidMemberships = (editData.memberships || []).some(m => 
       !m.name.trim() || !m.login.trim() || !m.password.trim() || !m.number.trim()
     );
@@ -676,6 +697,14 @@ const CitizenDashboard = () => {
     const errors = validateAllFields(newCitizen);
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
+      return;
+    }
+
+    const invalidBureausNew = (newCitizen.bureaus || []).some(
+      b => !b.name.trim() || !b.login.trim() || !b.password.trim()
+    );
+    if (invalidBureausNew) {
+      setError('All bureau fields (Name, Login, Password) must be filled');
       return;
     }
 
@@ -729,7 +758,7 @@ const CitizenDashboard = () => {
     }
   };
 
-  const handleInputChange = (field: string, value: string | string[] | Membership[] | CustomField[]) => {
+  const handleInputChange = (field: string, value: string | string[] | Bureau[] | Membership[] | CustomField[]) => {
     setEditData({ ...editData, [field]: value });
     if (validationErrors[field]) {
       setValidationErrors(prev => {
@@ -740,7 +769,7 @@ const CitizenDashboard = () => {
     }
   };
 
-  const handleNewCitizenChange = (field: string, value: string | string[] | Membership[] | CustomField[]) => {
+  const handleNewCitizenChange = (field: string, value: string | string[] | Bureau[] | Membership[] | CustomField[]) => {
     setNewCitizen({ ...newCitizen, [field]: value });
     if (validationErrors[field]) {
       setValidationErrors(prev => {
@@ -1843,6 +1872,113 @@ const CitizenDashboard = () => {
                   </div>
                 </div>
 
+                {/* Bureaus Section */}
+                <div className="mt-6 border-t border-gray-200 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Bureaus</h3>
+                    {userRole === 'admin' && editingId === citizen.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newBureau: Bureau = {
+                            id: Date.now(),
+                            name: '',
+                            notes: '',
+                            login: '',
+                            password: '',
+                          };
+                          setEditData({ ...editData, bureaus: [...(editData.bureaus || []), newBureau] });
+                        }}
+                        className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                      >
+                        <Plus size={16} />
+                        Add Bureau
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {(editingId === citizen.id ? (editData.bureaus ?? []) : (citizen.bureaus ?? [])).map((bureau: Bureau, idx: number) => (
+                      <div key={bureau.id} className="p-4 bg-gray-50 rounded-lg">
+                        {editingId === citizen.id && userRole === 'admin' ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <CopyableInput
+                              type="text"
+                              value={bureau.name}
+                              onChange={(e) => {
+                                const updated = [...(editData.bureaus ?? [])];
+                                updated[idx].name = e.target.value;
+                                setEditData({ ...editData, bureaus: updated });
+                              }}
+                              placeholder="Name"
+                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                            />
+                            <CopyableInput
+                              type="text"
+                              value={bureau.login}
+                              onChange={(e) => {
+                                const updated = [...(editData.bureaus ?? [])];
+                                updated[idx].login = e.target.value;
+                                setEditData({ ...editData, bureaus: updated });
+                              }}
+                              placeholder="Login"
+                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                            />
+                            <div className="flex gap-2 md:col-span-2">
+                              <CopyableInput
+                                type="text"
+                                value={bureau.password}
+                                wrapperClassName="flex-1"
+                                onChange={(e) => {
+                                  const updated = [...(editData.bureaus ?? [])];
+                                  updated[idx].password = e.target.value;
+                                  setEditData({ ...editData, bureaus: updated });
+                                }}
+                                placeholder="Password"
+                                className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeleteTarget({ type: 'bureau', citizenId: citizen.id, index: idx });
+                                  setShowDeleteModal(true);
+                                }}
+                                className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 shrink-0"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                            <CopyableTextarea
+                              value={bureau.notes}
+                              onChange={(e) => {
+                                const updated = [...(editData.bureaus ?? [])];
+                                updated[idx].notes = e.target.value;
+                                setEditData({ ...editData, bureaus: updated });
+                              }}
+                              placeholder="Notes"
+                              rows={3}
+                              wrapperClassName="md:col-span-2"
+                              className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                            />
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-800">
+                            <div><strong>Name:</strong> {bureau.name}</div>
+                            <div><strong>Login:</strong> {bureau.login}</div>
+                            <div className="md:col-span-2"><strong>Password:</strong> {bureau.password}</div>
+                            <div className="md:col-span-2">
+                              <strong className="block mb-1">Notes</strong>
+                              <CopyableText value={bureau.notes ?? ''} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {(editingId === citizen.id ? (editData.bureaus || []) : (citizen.bureaus || [])).length === 0 && (
+                      <p className="text-sm text-gray-500">No bureaus added</p>
+                    )}
+                  </div>
+                </div>
+
                 {/* Memberships Section */}
                 <div className="mt-6 border-t border-gray-200 pt-6">
                   <div className="flex items-center justify-between mb-4">
@@ -2121,6 +2257,85 @@ const CitizenDashboard = () => {
               </div>
               <div className="mt-6 border-t border-gray-200 pt-6">
                 <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Bureaus</h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newBureau: Bureau = { id: Date.now(), name: '', notes: '', login: '', password: '' };
+                      setNewCitizen({ ...newCitizen, bureaus: [...(newCitizen.bureaus || []), newBureau] });
+                    }}
+                    className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                  >
+                    <Plus size={16} />
+                    Add Bureau
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {(newCitizen.bureaus || []).map((bureau, idx) => (
+                    <div key={bureau.id} className="p-4 bg-gray-50 rounded-lg">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <CopyableInput
+                          type="text"
+                          value={bureau.name}
+                          onChange={(e) => {
+                            const updated = [...(newCitizen.bureaus || [])];
+                            updated[idx].name = e.target.value;
+                            setNewCitizen({ ...newCitizen, bureaus: updated });
+                          }}
+                          placeholder="Name"
+                          className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                        />
+                        <CopyableInput
+                          type="text"
+                          value={bureau.login}
+                          onChange={(e) => {
+                            const updated = [...(newCitizen.bureaus || [])];
+                            updated[idx].login = e.target.value;
+                            setNewCitizen({ ...newCitizen, bureaus: updated });
+                          }}
+                          placeholder="Login"
+                          className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                        />
+                        <div className="flex gap-2 md:col-span-2">
+                          <CopyableInput
+                            type="text"
+                            value={bureau.password}
+                            wrapperClassName="flex-1"
+                            onChange={(e) => {
+                              const updated = [...(newCitizen.bureaus || [])];
+                              updated[idx].password = e.target.value;
+                              setNewCitizen({ ...newCitizen, bureaus: updated });
+                            }}
+                            placeholder="Password"
+                            className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => { setDeleteTarget({ type: 'bureauNew', index: idx }); setShowDeleteModal(true); }}
+                            className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 shrink-0"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        <CopyableTextarea
+                          value={bureau.notes}
+                          onChange={(e) => {
+                            const updated = [...(newCitizen.bureaus || [])];
+                            updated[idx].notes = e.target.value;
+                            setNewCitizen({ ...newCitizen, bureaus: updated });
+                          }}
+                          placeholder="Notes"
+                          rows={3}
+                          wrapperClassName="md:col-span-2"
+                          className="px-3 py-2 border border-gray-300 rounded text-gray-900"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-6 border-t border-gray-200 pt-6">
+                <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-800">Memberships</h3>
                   <button onClick={() => { const newMembership = { id: Date.now(), name: '', login: '', password: '', number: '' }; setNewCitizen({ ...newCitizen, memberships: [...(newCitizen.memberships || []), newMembership] }); }} className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"><Plus size={16} />Add Membership</button>
                 </div>
@@ -2291,8 +2506,10 @@ const CitizenDashboard = () => {
               </div>
               <p className="text-gray-700 mb-6">
                 {deleteTarget?.type === 'citizen' && 'Are you sure you want to delete this citizen?'}
+                {deleteTarget?.type === 'bureau' && 'Are you sure you want to delete this bureau?'}
                 {deleteTarget?.type === 'membership' && 'Are you sure you want to delete this membership?'}
                 {deleteTarget?.type === 'customField' && 'Are you sure you want to delete this custom field?'}
+                {deleteTarget?.type === 'bureauNew' && 'Are you sure you want to remove this bureau?'}
                 {deleteTarget?.type === 'membershipNew' && 'Are you sure you want to remove this membership?'}
                 {deleteTarget?.type === 'customFieldNew' && 'Are you sure you want to remove this custom field?'}
                 {deleteTarget?.type === 'bankAccount' && 'Are you sure you want to remove this bank account?'}
@@ -2300,7 +2517,7 @@ const CitizenDashboard = () => {
               </p>
               <div className="flex items-center justify-end gap-3">
                 <button onClick={() => { setShowDeleteModal(false); setDeleteTarget(null); }} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancel</button>
-                <button onClick={async () => { try { if (deleteTarget?.type === 'citizen') { const res = await fetch(`/api/citizens/${deleteTarget.id}`, { method: 'DELETE' }); if (!res.ok) { const body = await res.json(); throw new Error(body.error ?? 'Failed to delete'); } setShowDeleteModal(false); setDeleteTarget(null); await fetchCitizens(); } else if (deleteTarget?.type === 'membership') { const updated = (editData.memberships ?? []).filter((_: Membership, i: number) => i !== deleteTarget.index); setEditData({ ...editData, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customField') { const updated = (editData.customFields ?? []).filter((_: CustomField, i: number) => i !== deleteTarget.index); setEditData({ ...editData, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'membershipNew') { const updated = newCitizen.memberships.filter((_: Membership, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customFieldNew') { const updated = newCitizen.customFields.filter((_: CustomField, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccount') { const updated = (editData.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setEditData({ ...editData, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccountNew') { const updated = (newCitizen.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } } catch (err) { setError(err instanceof Error ? err.message : 'An error occurred'); setShowDeleteModal(false); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Delete</button>
+                <button onClick={async () => { try { if (deleteTarget?.type === 'citizen') { const res = await fetch(`/api/citizens/${deleteTarget.id}`, { method: 'DELETE' }); if (!res.ok) { const body = await res.json(); throw new Error(body.error ?? 'Failed to delete'); } setShowDeleteModal(false); setDeleteTarget(null); await fetchCitizens(); } else if (deleteTarget?.type === 'bureau') { const updated = (editData.bureaus ?? []).filter((_: Bureau, i: number) => i !== deleteTarget.index); setEditData({ ...editData, bureaus: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'membership') { const updated = (editData.memberships ?? []).filter((_: Membership, i: number) => i !== deleteTarget.index); setEditData({ ...editData, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customField') { const updated = (editData.customFields ?? []).filter((_: CustomField, i: number) => i !== deleteTarget.index); setEditData({ ...editData, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bureauNew') { const updated = (newCitizen.bureaus ?? []).filter((_: Bureau, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, bureaus: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'membershipNew') { const updated = newCitizen.memberships.filter((_: Membership, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, memberships: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'customFieldNew') { const updated = newCitizen.customFields.filter((_: CustomField, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, customFields: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccount') { const updated = (editData.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setEditData({ ...editData, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } else if (deleteTarget?.type === 'bankAccountNew') { const updated = (newCitizen.bankAccounts ?? []).filter((_: BankAccount, i: number) => i !== deleteTarget.index); setNewCitizen({ ...newCitizen, bankAccounts: updated }); setShowDeleteModal(false); setDeleteTarget(null); } } catch (err) { setError(err instanceof Error ? err.message : 'An error occurred'); setShowDeleteModal(false); setDeleteTarget(null); } }} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Delete</button>
               </div>
             </div>
           </div>

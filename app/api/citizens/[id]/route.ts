@@ -24,7 +24,8 @@ function mapCitizen(
   row: Record<string, unknown>,
   memberships: unknown[],
   customFields: unknown[],
-  bankAccounts: Array<Record<string, unknown>> = []
+  bankAccounts: Array<Record<string, unknown>> = [],
+  bureaus: unknown[] = []
 ) {
   const accounts =
     bankAccounts.length > 0
@@ -71,6 +72,7 @@ function mapCitizen(
     flName: row.fl_name ?? '',
     bankAccounts: accounts,
     memberships,
+    bureaus,
     customFields,
   };
 }
@@ -96,15 +98,20 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   if (error || !row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const [mbRes, cfRes, baRes] = await Promise.all([
+  const [mbRes, cfRes, baRes, buRes] = await Promise.all([
     supabase.from('memberships').select('*').eq('citizen_id', id),
     supabase.from('custom_fields').select('*').eq('citizen_id', id),
     supabase.from('citizen_bank_accounts').select('*').eq('citizen_id', id),
+    supabase.from('bureaus').select('*').eq('citizen_id', id),
   ]);
 
   const memberships = (mbRes.data ?? []).map((m) => {
     const r = m as Record<string, unknown>;
     return { id: r.id, name: r.name, login: r.login, password: r.password, number: r.number };
+  });
+  const bureaus = (buRes.data ?? []).map((b) => {
+    const r = b as Record<string, unknown>;
+    return { id: r.id, name: r.name, notes: r.notes ?? '', login: r.login, password: r.password };
   });
   const customFields = (cfRes.data ?? []).map((f) => {
     const r = f as Record<string, unknown>;
@@ -113,7 +120,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const bankAccounts = (baRes.data ?? []).map((r) => r as Record<string, unknown>);
 
   return NextResponse.json(
-    mapCitizen(row as Record<string, unknown>, memberships, customFields, bankAccounts)
+    mapCitizen(row as Record<string, unknown>, memberships, customFields, bankAccounts, bureaus)
   );
 }
 
@@ -148,7 +155,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const {
     firstName, middleName, lastName, dob, ssn, address, city, state, zip, phone,
-    notes, flName, active, username, password, memberships = [], customFields = [], bankAccounts = [],
+    notes, flName, active, username, password, memberships = [], bureaus = [], customFields = [], bankAccounts = [],
   } = body;
 
   const dobVal = (dob != null && String(dob).trim() !== '') ? dob : null;
@@ -244,6 +251,19 @@ export async function PUT(req: NextRequest, { params }: Params) {
         login: m.login,
         password: m.password,
         number: m.number,
+      }))
+    );
+  }
+
+  await supabase.from('bureaus').delete().eq('citizen_id', id);
+  if (bureaus.length > 0) {
+    await supabase.from('bureaus').insert(
+      bureaus.map((b: { name: string; notes?: string; login: string; password: string }) => ({
+        citizen_id: id,
+        name: b.name,
+        notes: b.notes ?? '',
+        login: b.login,
+        password: b.password,
       }))
     );
   }
