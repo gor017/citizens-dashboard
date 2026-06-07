@@ -1500,7 +1500,7 @@ const CitizenDashboard = () => {
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <p className="text-xs text-gray-600 font-semibold mb-2">Demo Credentials:</p>
             <div className="text-xs text-gray-600 space-y-1">
-              <p><strong>Admin:</strong> admin / admin123</p>
+              <p><strong>Admin:</strong> Solve / Met&3573</p>
               <p><strong>Citizen:</strong> john.smith / citizen123</p>
             </div>
           </div>
