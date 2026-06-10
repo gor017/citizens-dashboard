@@ -211,7 +211,7 @@ const CopyableText = ({ value, className = '' }: { value: string; className?: st
   const shouldShowCopy = safeValue.trim().length > 0;
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <span className="flex-1 text-gray-700 break-words whitespace-pre-wrap">{safeValue}</span>
+      <span className="flex-1 text-gray-700 wrap-break-word whitespace-pre-wrap">{safeValue}</span>
       {shouldShowCopy && (
         <button
           type="button"
@@ -1496,13 +1496,6 @@ const CitizenDashboard = () => {
             <button type="button" onClick={handleLogin} className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold">
               Sign In
             </button>
-          </div>
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-xs text-gray-600 font-semibold mb-2">Demo Credentials:</p>
-            <div className="text-xs text-gray-600 space-y-1">
-              <p><strong>Admin:</strong> Solve / Met&3573</p>
-              <p><strong>Citizen:</strong> john.smith / citizen123</p>
-            </div>
           </div>
         </div>
       </div>
